@@ -99,11 +99,11 @@
   <hr class="dv">
   <div>
     <div class="slabel">📂 Subir PDFs (Factura + Carta Porte)</div>
-    <div class="drop" id="dz" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)" onclick="document.getElementById('fi').click()">
+    <label for="fi" class="drop" id="dz" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)" style="display:block;cursor:pointer">
       <div class="di">📄</div>
       <div class="dl"><b>Haz clic aquí para seleccionar PDFs</b><br>o arrastra los archivos</div>
-    </div>
-    <input type="file" accept=".pdf" multiple onchange="handleFiles(this.files)" id="fi" style="display:none">
+      <input type="file" accept=".pdf" multiple onchange="handleFiles(this.files)" id="fi" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+    </label>
     <div id="flist" class="flist" style="margin-top:8px"></div>
     <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Sube los dos PDFs del mismo viaje: la <b>factura</b> (CFDI) y la <b>Carta Porte</b>. El sistema los vinculará automáticamente.</div>
   </div>
