@@ -215,55 +215,109 @@ function emparejar() {
   return pares;
 }
 
-function extraerNumeroCEDA(folio) {
-  // PEM-DAP-VZ-5175-2026-003  ->  5175
-  // PTM-5689-TLACHICHUCA       ->  5689
-  if (!folio) return null;
-  var m = folio.match(/[A-Z]{2,5}-(\d{4,5})/i);
-  return m ? m[1] : null;
+function extraerTodosNumeros(texto) {
+  // Extracts all 4-5 digit numbers from any string
+  // "PEM-DAP-VZ-5709-2026-002" -> ["5709"] (excludes year 2026 and short nums)
+  // "VUU5467" -> ["5467"]
+  // "PEM-DAP-VZ-5175-2026-003" -> ["5175"]
+  if (!texto) return [];
+  var nums = [];
+  var m;
+  var re = /(\d{4,5})/g;
+  while ((m = re.exec(texto)) !== null) {
+    var n = m[1];
+    // Exclude obvious years and sequential numbers
+    if (n >= '2020' && n <= '2030') continue;
+    nums.push(n);
+  }
+  return nums;
 }
 
+function extraerNumeroCEDA(folio) {
+  var nums = extraerTodosNumeros(folio);
+  return nums.length > 0 ? nums[0] : null;
+}
+
+
 function buscarTarifa(claveCeda, destino, origen, folioViaje) {
-  var dn  = (destino   || '').toUpperCase().trim();
-  var ccn = (claveCeda || '').toUpperCase().trim();
-  var on  = (origen    || '').toUpperCase().trim();
+  var dn  = (destino    || '').toUpperCase().trim();
+  var ccn = (claveCeda  || '').toUpperCase().trim();
+  var on  = (origen     || '').toUpperCase().trim();
+  var fv  = (folioViaje || '').toUpperCase().trim();
 
   function mejorPorOrigen(lista) {
-    if (!on) return lista[0];
-    var kw = on.split(/[\s,]+/)[0];
-    return lista.find(function(t){ return t.o.toUpperCase().indexOf(kw) >= 0; }) || lista[0];
+    if (!on || lista.length === 1) return lista[0];
+    var keywords = ['COATZ', 'LAZARO', 'CARDENAS', 'FERCO', 'TOLUCA', 'SALINA', 'MERIDA', 'QUERETARO'];
+    for (var ki = 0; ki < keywords.length; ki++) {
+      if (on.indexOf(keywords[ki]) >= 0) {
+        var found = lista.find(function(t){ return t.o.toUpperCase().indexOf(keywords[ki]) >= 0; });
+        if (found) return found;
+      }
+    }
+    return lista[0];
   }
 
-  // 1. Buscar por numero extraido del folio (mas preciso)
-  var numFolio = extraerNumeroCEDA(folioViaje) || extraerNumeroCEDA(ccn);
-  if (numFolio) {
-    var mf = TARIFAS.filter(function(t){
-      return t.cc.replace(/[^0-9]/g,'') === numFolio;
+  function buscarPorNumero(num) {
+    if (!num) return null;
+    var res = TARIFAS.filter(function(t){
+      return t.cc.replace(/[^0-9]/g,'') === num;
     });
-    if (mf.length >= 1) return mejorPorOrigen(mf);
+    return res.length >= 1 ? mejorPorOrigen(res) : null;
   }
 
-  // 2. Buscar por clave CEDA exacta (ej: PTM-5689)
-  if (ccn && ccn !== 'NAN') {
-    var mc = TARIFAS.filter(function(t){ return t.cc.toUpperCase() === ccn; });
-    if (mc.length >= 1) return mejorPorOrigen(mc);
-    // Partial: solo el numero
-    var mc2 = TARIFAS.filter(function(t){ return t.cc.indexOf(ccn.replace(/[^0-9]/g,'')) >= 0 && t.cc.replace(/[^0-9]/g,'') === ccn.replace(/[^0-9]/g,''); });
-    if (mc2.length >= 1) return mejorPorOrigen(mc2);
+  // ESTRATEGIA 1: Todos los numeros de 4-5 digitos en el folio del viaje
+  var numsFolio = extraerTodosNumeros(fv);
+  for (var i = 0; i < numsFolio.length; i++) {
+    var r1 = buscarPorNumero(numsFolio[i]);
+    if (r1) return r1;
   }
 
-  // 3. Buscar por nombre de destino
+  // ESTRATEGIA 2: Todos los numeros en la clave CEDA que dio Claude
+  var numsCeda = extraerTodosNumeros(ccn);
+  for (var j = 0; j < numsCeda.length; j++) {
+    var r2 = buscarPorNumero(numsCeda[j]);
+    if (r2) return r2;
+  }
+
+  // ESTRATEGIA 3: Clave CEDA exacta
+  if (ccn && ccn !== 'NAN' && ccn !== 'NULL') {
+    var r3 = TARIFAS.filter(function(t){ return t.cc.toUpperCase() === ccn; });
+    if (r3.length >= 1) return mejorPorOrigen(r3);
+  }
+
+  // ESTRATEGIA 4: Palabras del destino (busqueda por cada palabra significativa)
   if (dn) {
-    var md = TARIFAS.filter(function(t){
-      var td = t.d.toUpperCase();
-      return td === dn || td.indexOf(dn) >= 0 || dn.indexOf(td.split('-')[0].trim()) >= 0;
-    });
-    if (md.length >= 1) return mejorPorOrigen(md);
+    var palabras = dn.split(/[\s\-,]+/).filter(function(p){ return p.length >= 4; });
+    for (var k = 0; k < palabras.length; k++) {
+      var pal = palabras[k];
+      // Skip common/generic words
+      if (['CEDA','PARA','ZONA','TIPO','SERV','MUNI'].indexOf(pal) >= 0) continue;
+      var r4 = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(pal) >= 0; });
+      if (r4.length >= 1) return mejorPorOrigen(r4);
+    }
+  }
+
+  // ESTRATEGIA 5: Palabras del folio buscarlas en el destino del tarifario
+  if (fv) {
+    var partesFolio = fv.split(/[\-_]+/).filter(function(p){ return p.length >= 4 && !/^\d+$/.test(p); });
+    for (var m2 = 0; m2 < partesFolio.length; m2++) {
+      var parte = partesFolio[m2];
+      var r5 = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(parte) >= 0; });
+      if (r5.length >= 1) return mejorPorOrigen(r5);
+    }
+  }
+
+  // ESTRATEGIA 6: Coincidencia parcial de destino (primera palabra larga)
+  if (dn) {
+    var primPal = dn.split(/[\s\-]+/).find(function(p){ return p.length >= 5; });
+    if (primPal) {
+      var r6 = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(primPal) >= 0; });
+      if (r6.length >= 1) return mejorPorOrigen(r6);
+    }
   }
 
   return null;
 }
-
 
 function toBase64(file) {
   return new Promise(function(res, rej) {
@@ -291,9 +345,10 @@ function buildPrompt(tieneCarta) {
     + '- Tipo comprobante: I - Ingreso con Complemento Carta Porte\n'
     + '- Clave producto: 78101802\n'
     + '- Clave unidad: E48\n'
-    + '- IVA trasladado: 16%\n'
-    + '- IVA retenido: 4% (OBLIGATORIO)\n'
-    + '- Si emisor es RESICO (regimen 626): tambien retener ISR 1.25%\n'
+    + '- IVA trasladado: 16% (SIEMPRE obligatorio)\n'
+    + '- IVA retenido 4%: SIEMPRE obligatorio en TODAS las facturas, sin excepcion, independientemente del regimen fiscal del emisor\n'
+    + '- ISR retenido 1.25%: SOLO si el emisor tributa en RESICO (regimen 626). No aplica en regimen 612 ni otros\n'
+    + '- IMPORTANTE: El IVA retenido 4% y el ISR retenido son conceptos DISTINTOS e INDEPENDIENTES. El IVA 4% siempre va. El ISR 1.25% solo en RESICO\n'
     + '- Metodo pago: PPD\n'
     + '- Forma pago: 99\n'
     + '- Complemento Carta Porte version 3.1\n'
