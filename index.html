@@ -97,14 +97,14 @@ hr.dv{border:none;border-top:1px solid var(--border)}
   </div>
   <hr class="dv">
   <div>
-    <div class="slabel">&#x1F4C2; Subir PDFs (Factura + Carta Porte)</div>
+    <div class="slabel">&#x1F4C2; Subir archivos (PDF o imagen)</div>
     <label for="fi" class="drop" id="dz" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)">
-      <input type="file" accept=".pdf" multiple id="fi" onchange="handleFiles(this.files)" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple id="fi" onchange="handleFiles(this.files)" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
       <div class="di">&#x1F4C4;</div>
-      <div class="dl"><b>Haz clic aqui para seleccionar PDFs</b><br>o arrastra los archivos aqui</div>
+      <div class="dl"><b>Haz clic aqui para seleccionar archivos</b><br>PDF, JPG, PNG o WEBP</div>
     </label>
     <div id="flist" class="flist"></div>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Sube los dos PDFs del mismo viaje: la <b>factura</b> (CFDI) y la <b>Carta Porte</b>.</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Sube la <b>factura</b> (PDF) y la <b>Carta Porte</b> (PDF o imagen JPG/PNG).</div>
   </div>
   <hr class="dv">
   <button class="btn bp" onclick="procesarTodas()" style="width:100%">&#x26A1; Validar facturas</button>
@@ -148,12 +148,20 @@ function doDrop(e) {
   handleFiles(e.dataTransfer.files);
 }
 
+function isImage(f) {
+  return f.type.indexOf('image/') === 0 || /\.(jpg|jpeg|png|webp)$/i.test(f.name);
+}
+function isPDF(f) {
+  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
+}
 function handleFiles(files) {
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
-    if (f.type !== 'application/pdf') continue;
+    if (!isPDF(f) && !isImage(f)) continue;
     var n = f.name.toLowerCase();
-    var esCarta = n.indexOf('carta') >= 0 || n.indexOf('porte') >= 0 || n.indexOf('cpi_') >= 0 || n.startsWith('cpi');
+    var esCarta = n.indexOf('carta') >= 0 || n.indexOf('porte') >= 0
+      || n.indexOf('cpi_') >= 0 || n.startsWith('cpi')
+      || n.indexOf('cierre') >= 0 || isImage(f);
     archivos.push({ file: f, nombre: f.name, tipo: esCarta ? 'carta' : 'factura' });
   }
   renderFiles();
@@ -165,7 +173,8 @@ function renderFiles() {
   var html = '';
   for (var i = 0; i < archivos.length; i++) {
     var a = archivos[i];
-    var icon = a.tipo === 'carta' ? '&#x1F5FA;' : '&#x1F9FE;';
+    var isImg = /\.(jpg|jpeg|png|webp)$/i.test(a.nombre);
+    var icon = a.tipo === 'carta' ? (isImg ? '&#x1F4F7;' : '&#x1F5FA;') : '&#x1F9FE;';
     html += '<div class="fchip">'
       + '<span>' + icon + '</span>'
       + '<span class="fn" title="' + a.nombre + '">' + a.nombre + '</span>'
@@ -327,12 +336,33 @@ async function validar(factura, carta) {
 
   var content = [];
   var fb = await toBase64(factura.file);
-  content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fb } });
+  if (isImage(factura.file)) {
+    var fMime = factura.file.type || 'image/jpeg';
+    if (fMime === 'application/octet-stream' || fMime === '') {
+      if (/\.png$/i.test(factura.nombre)) fMime = 'image/png';
+      else if (/\.webp$/i.test(factura.nombre)) fMime = 'image/webp';
+      else fMime = 'image/jpeg';
+    }
+    content.push({ type: 'image', source: { type: 'base64', media_type: fMime, data: fb } });
+  } else {
+    content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fb } });
+  }
   content.push({ type: 'text', text: '[DOC 1 - FACTURA: ' + factura.nombre + ']' });
 
   if (carta) {
     var cb = await toBase64(carta.file);
-    content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: cb } });
+    if (isImage(carta.file)) {
+      // Send as image for JPG/PNG/WEBP
+      var imgMime = carta.file.type || 'image/jpeg';
+      if (imgMime === 'application/octet-stream' || imgMime === '') {
+        if (/\.png$/i.test(carta.nombre)) imgMime = 'image/png';
+        else if (/\.webp$/i.test(carta.nombre)) imgMime = 'image/webp';
+        else imgMime = 'image/jpeg';
+      }
+      content.push({ type: 'image', source: { type: 'base64', media_type: imgMime, data: cb } });
+    } else {
+      content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: cb } });
+    }
     content.push({ type: 'text', text: '[DOC 2 - CARTA PORTE: ' + carta.nombre + ']' });
   }
 
