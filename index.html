@@ -26,7 +26,7 @@
   .bsm{padding:6px 10px;font-size:12px}
   .drop{border:2px dashed var(--border);border-radius:var(--r);padding:16px;text-align:center;cursor:pointer;transition:border-color .2s,background .2s;position:relative}
   .drop:hover,.drop.drag{border-color:var(--accent);background:rgba(79,126,248,.04)}
-  .drop input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+
   .drop .di{font-size:24px;margin-bottom:5px}
   .drop .dl{font-size:12px;color:var(--muted)}
   .flist{display:flex;flex-direction:column;gap:5px}
@@ -36,9 +36,6 @@
   .fchip .fr:hover{color:var(--err)}
   .fchip select{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;padding:2px 4px}
   hr.dv{border:none;border-top:1px solid var(--border)}
-  .costbox{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.7}
-  .costbox b{color:var(--text)}
-  .costbox .big{font-size:18px;font-weight:700;color:var(--accent)}
   .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
   .toolbar{padding:12px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface);flex-wrap:wrap}
   .ttl{font-size:14px;font-weight:500;flex:1}
@@ -100,23 +97,13 @@
     <div style="font-size:11px;color:var(--muted);margin-top:5px">Obtén tu key en <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a></div>
   </div>
   <hr class="dv">
-  <div class="costbox">
-    <div style="color:var(--muted);margin-bottom:4px">💰 Costo estimado por factura</div>
-    <div class="big">~$0.75 MXN</div>
-    <div style="color:var(--muted);margin-top:6px;font-size:11px;line-height:1.6">
-      Usando <b style="color:var(--text)">Claude Haiku 4.5</b> (modelo más económico).<br>
-      Con Sonnet 4.6: ~$0.65–$1.00 MXN.<br>
-      <span style="color:var(--ok)">✦ Para reducir costos:</span> cambia el modelo a <code style="background:rgba(255,255,255,.06);padding:1px 4px;border-radius:4px">claude-haiku-4-5-20251001</code> en el código — procesa igual de bien facturas estándar y cuesta <b style="color:var(--text)">~4× menos</b> que Sonnet.
-    </div>
-  </div>
-  <hr class="dv">
   <div>
     <div class="slabel">📂 Subir PDFs (Factura + Carta Porte)</div>
-    <div class="drop" id="dz" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)">
-      <input type="file" accept=".pdf" multiple onchange="handleFiles(this.files)" id="fi">
+    <div class="drop" id="dz" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)" onclick="document.getElementById('fi').click()">
       <div class="di">📄</div>
-      <div class="dl"><b>Arrastra PDFs aquí</b><br>o haz clic para seleccionar</div>
+      <div class="dl"><b>Haz clic aquí para seleccionar PDFs</b><br>o arrastra los archivos</div>
     </div>
+    <input type="file" accept=".pdf" multiple onchange="handleFiles(this.files)" id="fi" style="display:none">
     <div id="flist" class="flist" style="margin-top:8px"></div>
     <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Sube los dos PDFs del mismo viaje: la <b>factura</b> (CFDI) y la <b>Carta Porte</b>. El sistema los vinculará automáticamente.</div>
   </div>
