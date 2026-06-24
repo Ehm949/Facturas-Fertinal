@@ -285,7 +285,7 @@ function buildPrompt(tieneCarta) {
   return 'Eres validador experto de CFDIs mexicanos de transporte para Sol Firma de Negocios SA de CV.\n\n'
     + 'REGLAS DE VALIDACION:\n'
     + '- RFC receptor: SFN990310U62\n'
-    + '- Razon Social receptor: SOL FIRMA DE NEGOCIOS SA DE CV\n'
+    + '- Razon Social receptor: debe contener SOL FIRMA DE NEGOCIOS. Si el valor es exactamente "SOL FIRMA DE NEGOCIOS" o "SOL FIRMA DE NEGOCIOS SA DE CV" marca ok:true en ambos casos.\n'
     + '- Regimen Fiscal receptor: 601\n'
     + '- Uso CFDI: G03\n'
     + '- Tipo comprobante: I - Ingreso con Complemento Carta Porte\n'
@@ -328,7 +328,7 @@ function buildPrompt(tieneCarta) {
     + '  "comparacion": ' + compSchema + ',\n'
     + '  "validacion_campos": [\n'
     + '    {"campo":"RFC receptor","ok":true,"valor":"...","esperado":"SFN990310U62","detalle":""},\n'
-    + '    {"campo":"Razon social receptor","ok":true,"valor":"...","esperado":"SOL FIRMA DE NEGOCIOS SA DE CV","detalle":""},\n'
+    + '    {"campo":"Razon social receptor","ok":true,"valor":"...","esperado":"SOL FIRMA DE NEGOCIOS","detalle":""},\n'
     + '    {"campo":"Uso CFDI","ok":true,"valor":"...","esperado":"G03","detalle":""},\n'
     + '    {"campo":"Metodo de pago","ok":true,"valor":"...","esperado":"PPD","detalle":""},\n'
     + '    {"campo":"Forma de pago","ok":true,"valor":"...","esperado":"99","detalle":""},\n'
@@ -489,9 +489,21 @@ async function validar(factura, carta) {
     var vp = result.validacion_precio;
     var df = result.datos_factura || {};
     var folioViaje = df.folio_viaje || vp.clave_ceda_detectada || '';
-    // Use numero_ceda from Claude if available, else extract from folio
     var cedaKey = vp.numero_ceda || vp.clave_ceda_detectada || '';
     var match = buscarTarifa(cedaKey, vp.destino_detectado || df.destino_nombre, vp.origen_detectado, folioViaje);
+
+    // ALWAYS populate fiscal real values from invoice data regardless of match
+    var ivaTrasladadoReal = parseFloat((vp.iva_trasladado_facturado || df.iva_trasladado || '').replace(/[$,\s]/g,''));
+    var ivaRetenidoReal   = parseFloat((vp.iva_retenido_facturado   || df.iva_retenido  || '').replace(/[$,\s]/g,''));
+    var isrRetenidoReal   = parseFloat((vp.isr_retenido_facturado   || df.isr_retenido  || '0').replace(/[$,\s]/g,'')) || 0;
+    var totalReal         = parseFloat((vp.total_facturado          || df.total          || '').replace(/[$,\s]/g,''));
+    var subtotalReal      = parseFloat((vp.subtotal_facturado       || df.subtotal       || '').replace(/[$,\s]/g,''));
+    vp.iva_trasladado_real = isNaN(ivaTrasladadoReal) ? (df.iva_trasladado || '&#x2014;') : '$' + ivaTrasladadoReal.toFixed(2);
+    vp.iva_retenido_real   = isNaN(ivaRetenidoReal)   ? (df.iva_retenido  || '&#x2014;') : '$' + ivaRetenidoReal.toFixed(2);
+    vp.isr_retenido_real   = isrRetenidoReal > 0      ? '$' + isrRetenidoReal.toFixed(2) : 'No aplica';
+    vp.total_real          = isNaN(totalReal)          ? (df.total         || '&#x2014;') : '$' + totalReal.toFixed(2);
+    vp.subtotal_real_num   = isNaN(subtotalReal)       ? 0 : subtotalReal;
+
     if (match) {
       var tarifaUnit = parseFloat(match.t);
       var tons = parseFloat(vp.toneladas) || parseFloat(result.datos_factura ? result.datos_factura.toneladas_facturadas : 0) || 0;
@@ -510,19 +522,10 @@ async function validar(factura, carta) {
       var totalEsp = subtotalEsperado + (subtotalEsperado * 0.16) - (subtotalEsperado * 0.04) - (esResico ? subtotalEsperado * 0.0125 : 0);
       vp.total_esperado = '$' + totalEsp.toFixed(2);
 
-      // Comparar valores fiscales reales vs esperados
-      var ivaTrasladadoReal = parseFloat((df.iva_trasladado || '').replace(/[$,\s]/g,''));
-      var ivaRetenidoReal   = parseFloat((df.iva_retenido  || '').replace(/[$,\s]/g,''));
-      var isrRetenidoReal   = parseFloat((df.isr_retenido  || '0').replace(/[$,\s]/g,'')) || 0;
-      var totalReal         = parseFloat((df.total          || '').replace(/[$,\s]/g,''));
-
+      // Comparar valores fiscales reales vs esperados (ivaTrasladadoReal etc ya definidos arriba)
       vp.iva_trasladado_correcto = isNaN(ivaTrasladadoReal) ? null : Math.abs(ivaTrasladadoReal - subtotalEsperado * 0.16) <= subtotalEsperado * 0.01;
       vp.iva_retenido_correcto   = isNaN(ivaRetenidoReal)   ? null : Math.abs(ivaRetenidoReal   - subtotalEsperado * 0.04) <= subtotalEsperado * 0.01;
       vp.total_correcto          = isNaN(totalReal)          ? null : Math.abs(totalReal - totalEsp) <= totalEsp * 0.01;
-      vp.iva_trasladado_real = isNaN(ivaTrasladadoReal) ? (df.iva_trasladado || '&#x2014;') : '$' + ivaTrasladadoReal.toFixed(2);
-      vp.iva_retenido_real   = isNaN(ivaRetenidoReal)   ? (df.iva_retenido  || '&#x2014;') : '$' + ivaRetenidoReal.toFixed(2);
-      vp.isr_retenido_real   = isrRetenidoReal > 0 ? '$' + isrRetenidoReal.toFixed(2) : 'No aplica';
-      vp.total_real          = isNaN(totalReal)          ? (df.total         || '&#x2014;') : '$' + totalReal.toFixed(2);
 
       if (!isNaN(subtotalFacturado) && subtotalEsperado > 0) {
         var diff = Math.abs(subtotalFacturado - subtotalEsperado);
@@ -604,20 +607,23 @@ function renderCard(id, estado, data, fnombre, cnombre) {
         + '</div>';
     }
     var pc = vp.precio_correcto === true ? 'cmatch' : vp.precio_correcto === false ? 'cmis' : '';
-    var subtotalReal = vp.subtotal_facturado || (data.datos_factura ? data.datos_factura.subtotal : '') || '&#x2014;';
+    var subtotalReal = vp.subtotal_real_num > 0 ? '$' + vp.subtotal_real_num.toFixed(2) : (vp.subtotal_facturado || (data.datos_factura ? data.datos_factura.subtotal : '') || '&#x2014;');
+    var tarifaInfo = vp.tarifa_esperada_unitaria
+      ? ' &nbsp;|&nbsp; Tarifa: <b style="color:var(--text)">' + vp.tarifa_esperada_unitaria + '</b>'
+      : ' &nbsp;|&nbsp; <span style="color:var(--warn)">Tarifa no encontrada en tarifario</span>';
     precio = '<div class="csec">'
       + '<div class="cst">&#x1F4B0; Validacion de precio y desglose fiscal</div>'
       + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
       + 'Ruta: <b style="color:var(--text)">' + (vp.origen_detectado || '?') + '</b>'
-      + ' &#x2192; <b style="color:var(--text)">' + (vp.destino_detectado || data.datos_factura && data.datos_factura.destino_nombre || '?') + '</b>'
+      + ' &#x2192; <b style="color:var(--text)">' + (vp.destino_detectado || (data.datos_factura ? data.datos_factura.destino_nombre : '') || '?') + '</b>'
       + ' &nbsp;|&nbsp; ' + (vp.toneladas || 0) + ' ton'
-      + (vp.tarifa_esperada_unitaria ? ' &nbsp;|&nbsp; Tarifa: <b style="color:var(--text)">' + vp.tarifa_esperada_unitaria + '</b>' : '')
+      + tarifaInfo
       + '</div>'
       + '<div class="cgrid">'
       + cell('Subtotal facturado', vp.subtotal_esperado, subtotalReal, vp.precio_correcto)
       + cell('IVA 16% facturado',  vp.iva_trasladado_esperado, vp.iva_trasladado_real, vp.iva_trasladado_correcto)
       + cell('IVA ret. 4% facturado', vp.iva_retenido_esperado, vp.iva_retenido_real, vp.iva_retenido_correcto)
-      + cell('ISR retenido', vp.isr_retenido_esperado, vp.isr_retenido_real, null)
+      + cell('ISR retenido (1.25% si RESICO)', vp.isr_retenido_esperado, vp.isr_retenido_real, null)
       + cell('TOTAL facturado', vp.total_esperado, vp.total_real, vp.total_correcto)
       + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + (vp.toneladas || '&#x2014;') + ' ton</div></div>'
       + '</div>'
