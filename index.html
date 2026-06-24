@@ -215,30 +215,55 @@ function emparejar() {
   return pares;
 }
 
-function buscarTarifa(claveCeda, destino, origen) {
-  var dn = (destino || '').toUpperCase().trim();
+function extraerNumeroCEDA(folio) {
+  // PEM-DAP-VZ-5175-2026-003  ->  5175
+  // PTM-5689-TLACHICHUCA       ->  5689
+  if (!folio) return null;
+  var m = folio.match(/[A-Z]{2,5}-(\d{4,5})/i);
+  return m ? m[1] : null;
+}
+
+function buscarTarifa(claveCeda, destino, origen, folioViaje) {
+  var dn  = (destino   || '').toUpperCase().trim();
   var ccn = (claveCeda || '').toUpperCase().trim();
-  var on = (origen || '').toUpperCase().trim();
-  if (ccn && ccn !== 'NAN') {
-    var m = TARIFAS.filter(function(t){ return t.cc.toUpperCase() === ccn; });
-    if (m.length === 1) return m[0];
-    if (m.length > 1) {
-      var mo = m.find(function(t){ return on && t.o.toUpperCase().indexOf(on.split(' ')[0]) >= 0; });
-      return mo || m[0];
-    }
+  var on  = (origen    || '').toUpperCase().trim();
+
+  function mejorPorOrigen(lista) {
+    if (!on) return lista[0];
+    var kw = on.split(/[\s,]+/)[0];
+    return lista.find(function(t){ return t.o.toUpperCase().indexOf(kw) >= 0; }) || lista[0];
   }
+
+  // 1. Buscar por numero extraido del folio (mas preciso)
+  var numFolio = extraerNumeroCEDA(folioViaje) || extraerNumeroCEDA(ccn);
+  if (numFolio) {
+    var mf = TARIFAS.filter(function(t){
+      return t.cc.replace(/[^0-9]/g,'') === numFolio;
+    });
+    if (mf.length >= 1) return mejorPorOrigen(mf);
+  }
+
+  // 2. Buscar por clave CEDA exacta (ej: PTM-5689)
+  if (ccn && ccn !== 'NAN') {
+    var mc = TARIFAS.filter(function(t){ return t.cc.toUpperCase() === ccn; });
+    if (mc.length >= 1) return mejorPorOrigen(mc);
+    // Partial: solo el numero
+    var mc2 = TARIFAS.filter(function(t){ return t.cc.indexOf(ccn.replace(/[^0-9]/g,'')) >= 0 && t.cc.replace(/[^0-9]/g,'') === ccn.replace(/[^0-9]/g,''); });
+    if (mc2.length >= 1) return mejorPorOrigen(mc2);
+  }
+
+  // 3. Buscar por nombre de destino
   if (dn) {
-    var m2 = TARIFAS.filter(function(t){
+    var md = TARIFAS.filter(function(t){
       var td = t.d.toUpperCase();
       return td === dn || td.indexOf(dn) >= 0 || dn.indexOf(td.split('-')[0].trim()) >= 0;
     });
-    if (m2.length >= 1) {
-      var mo2 = m2.find(function(t){ return on && t.o.toUpperCase().indexOf(on.split(' ')[0]) >= 0; });
-      return mo2 || m2[0];
-    }
+    if (md.length >= 1) return mejorPorOrigen(md);
   }
+
   return null;
 }
+
 
 function toBase64(file) {
   return new Promise(function(res, rej) {
@@ -319,9 +344,18 @@ function buildPrompt(tieneCarta) {
     + '    {"campo":"Folio viaje en descripcion","ok":true,"valor":"...","esperado":"Presente","detalle":""}\n'
     + '  ],\n'
     + '  "validacion_precio": {\n'
-    + '    "clave_ceda_detectada":"...","origen_detectado":"...","toneladas":0,\n'
-    + '    "subtotal_facturado":"...","tarifa_esperada_unitaria":null,\n'
-    + '    "subtotal_esperado":null,"precio_correcto":null,"nota":""\n'
+    + '    "clave_ceda_detectada":"clave CEDA o numero del folio ej PTM-5689",\n'
+    + '    "numero_ceda":"solo el numero 4 o 5 digitos extraido del folio ej 5175",\n'
+    + '    "origen_detectado":"planta de origen segun Carta Porte",\n'
+    + '    "destino_detectado":"nombre del destino",\n'
+    + '    "toneladas":0,\n'
+    + '    "subtotal_facturado":"...",\n'
+    + '    "iva_trasladado_facturado":"...",\n'
+    + '    "iva_retenido_facturado":"...",\n'
+    + '    "isr_retenido_facturado":"... o 0 si no aplica",\n'
+    + '    "total_facturado":"...",\n'
+    + '    "tarifa_esperada_unitaria":null,"subtotal_esperado":null,\n'
+    + '    "precio_correcto":null,"nota":""\n'
     + '  },\n'
     + '  "bultos": null,\n'
     + '  "errores_criticos": [],\n'
@@ -450,10 +484,14 @@ async function validar(factura, carta) {
     }
   }
 
-  // Post-proceso: tarifa x toneladas
+  // Post-proceso: tarifa x toneladas + desglose fiscal
   if (result.validacion_precio) {
     var vp = result.validacion_precio;
-    var match = buscarTarifa(vp.clave_ceda_detectada, result.datos_factura ? result.datos_factura.destino_nombre : null, vp.origen_detectado);
+    var df = result.datos_factura || {};
+    var folioViaje = df.folio_viaje || vp.clave_ceda_detectada || '';
+    // Use numero_ceda from Claude if available, else extract from folio
+    var cedaKey = vp.numero_ceda || vp.clave_ceda_detectada || '';
+    var match = buscarTarifa(cedaKey, vp.destino_detectado || df.destino_nombre, vp.origen_detectado, folioViaje);
     if (match) {
       var tarifaUnit = parseFloat(match.t);
       var tons = parseFloat(vp.toneladas) || parseFloat(result.datos_factura ? result.datos_factura.toneladas_facturadas : 0) || 0;
@@ -463,6 +501,28 @@ async function validar(factura, carta) {
 
       vp.tarifa_esperada_unitaria = '$' + match.t + '/ton (' + match.o + ' -> ' + match.d + ')';
       vp.subtotal_esperado = '$' + subtotalEsperado.toFixed(2) + ' (' + match.t + ' x ' + tons + ' ton)';
+
+      // Calcular desglose fiscal esperado
+      var esResico = df.emisor_regimen && (df.emisor_regimen.indexOf('626') >= 0 || df.emisor_regimen.toUpperCase().indexOf('RESICO') >= 0);
+      vp.iva_trasladado_esperado  = '$' + (subtotalEsperado * 0.16).toFixed(2) + ' (16%)';
+      vp.iva_retenido_esperado    = '$' + (subtotalEsperado * 0.04).toFixed(2) + ' (4%)';
+      vp.isr_retenido_esperado    = esResico ? '$' + (subtotalEsperado * 0.0125).toFixed(2) + ' (1.25% RESICO)' : 'N/A (no es RESICO)';
+      var totalEsp = subtotalEsperado + (subtotalEsperado * 0.16) - (subtotalEsperado * 0.04) - (esResico ? subtotalEsperado * 0.0125 : 0);
+      vp.total_esperado = '$' + totalEsp.toFixed(2);
+
+      // Comparar valores fiscales reales vs esperados
+      var ivaTrasladadoReal = parseFloat((df.iva_trasladado || '').replace(/[$,\s]/g,''));
+      var ivaRetenidoReal   = parseFloat((df.iva_retenido  || '').replace(/[$,\s]/g,''));
+      var isrRetenidoReal   = parseFloat((df.isr_retenido  || '0').replace(/[$,\s]/g,'')) || 0;
+      var totalReal         = parseFloat((df.total          || '').replace(/[$,\s]/g,''));
+
+      vp.iva_trasladado_correcto = isNaN(ivaTrasladadoReal) ? null : Math.abs(ivaTrasladadoReal - subtotalEsperado * 0.16) <= subtotalEsperado * 0.01;
+      vp.iva_retenido_correcto   = isNaN(ivaRetenidoReal)   ? null : Math.abs(ivaRetenidoReal   - subtotalEsperado * 0.04) <= subtotalEsperado * 0.01;
+      vp.total_correcto          = isNaN(totalReal)          ? null : Math.abs(totalReal - totalEsp) <= totalEsp * 0.01;
+      vp.iva_trasladado_real = isNaN(ivaTrasladadoReal) ? (df.iva_trasladado || '&#x2014;') : '$' + ivaTrasladadoReal.toFixed(2);
+      vp.iva_retenido_real   = isNaN(ivaRetenidoReal)   ? (df.iva_retenido  || '&#x2014;') : '$' + ivaRetenidoReal.toFixed(2);
+      vp.isr_retenido_real   = isrRetenidoReal > 0 ? '$' + isrRetenidoReal.toFixed(2) : 'No aplica';
+      vp.total_real          = isNaN(totalReal)          ? (df.total         || '&#x2014;') : '$' + totalReal.toFixed(2);
 
       if (!isNaN(subtotalFacturado) && subtotalEsperado > 0) {
         var diff = Math.abs(subtotalFacturado - subtotalEsperado);
@@ -535,13 +595,31 @@ function renderCard(id, estado, data, fnombre, cnombre) {
   var precio = '';
   if (data.validacion_precio) {
     var vp = data.validacion_precio;
+    function cell(label, esperado, real, ok) {
+      var cls = ok === true ? 'cmatch' : ok === false ? 'cmis' : '';
+      return '<div class="cbox ' + cls + '">'
+        + '<div class="cbl">' + label + '</div>'
+        + '<div class="cbv">' + (real || '&#x2014;') + '</div>'
+        + (esperado ? '<div class="cd">Esperado: ' + esperado + '</div>' : '')
+        + '</div>';
+    }
     var pc = vp.precio_correcto === true ? 'cmatch' : vp.precio_correcto === false ? 'cmis' : '';
-    precio = '<div class="csec"><div class="cst">&#x1F4B0; Validacion de precio (tarifa x toneladas)</div>'
+    var subtotalReal = vp.subtotal_facturado || (data.datos_factura ? data.datos_factura.subtotal : '') || '&#x2014;';
+    precio = '<div class="csec">'
+      + '<div class="cst">&#x1F4B0; Validacion de precio y desglose fiscal</div>'
+      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
+      + 'Ruta: <b style="color:var(--text)">' + (vp.origen_detectado || '?') + '</b>'
+      + ' &#x2192; <b style="color:var(--text)">' + (vp.destino_detectado || data.datos_factura && data.datos_factura.destino_nombre || '?') + '</b>'
+      + ' &nbsp;|&nbsp; ' + (vp.toneladas || 0) + ' ton'
+      + (vp.tarifa_esperada_unitaria ? ' &nbsp;|&nbsp; Tarifa: <b style="color:var(--text)">' + vp.tarifa_esperada_unitaria + '</b>' : '')
+      + '</div>'
       + '<div class="cgrid">'
-      + '<div class="cbox"><div class="cbl">Tarifa unitaria en tarifario</div><div class="cbv">' + (vp.tarifa_esperada_unitaria || '&#x2014;') + '</div></div>'
-      + '<div class="cbox"><div class="cbl">Subtotal esperado</div><div class="cbv">' + (vp.subtotal_esperado || '&#x2014;') + '</div></div>'
-      + '<div class="cbox ' + pc + '"><div class="cbl">Subtotal facturado</div><div class="cbv">' + (vp.subtotal_facturado || (data.datos_factura ? data.datos_factura.subtotal : '') || '&#x2014;') + '</div></div>'
-      + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + (vp.toneladas || (data.datos_factura ? data.datos_factura.toneladas_facturadas : '') || '&#x2014;') + ' ton</div></div>'
+      + cell('Subtotal facturado', vp.subtotal_esperado, subtotalReal, vp.precio_correcto)
+      + cell('IVA 16% facturado',  vp.iva_trasladado_esperado, vp.iva_trasladado_real, vp.iva_trasladado_correcto)
+      + cell('IVA ret. 4% facturado', vp.iva_retenido_esperado, vp.iva_retenido_real, vp.iva_retenido_correcto)
+      + cell('ISR retenido', vp.isr_retenido_esperado, vp.isr_retenido_real, null)
+      + cell('TOTAL facturado', vp.total_esperado, vp.total_real, vp.total_correcto)
+      + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + (vp.toneladas || '&#x2014;') + ' ton</div></div>'
       + '</div>'
       + (vp.nota ? '<div style="font-size:12px;color:var(--muted);margin-top:7px">' + vp.nota + '</div>' : '')
       + '</div>';
