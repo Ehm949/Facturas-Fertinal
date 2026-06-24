@@ -269,9 +269,10 @@ function buildPrompt(tieneCarta) {
     + '- Descripcion debe incluir folio del viaje (ej: PEM-URE-VZ-5689-2026-021)\n'
     + '- Descripcion debe incluir destino (ej: PTM-5689-TLACHICHUCA)\n\n'
     + 'PRECIO: El subtotal correcto = TARIFA UNITARIA x TONELADAS ENVIADAS.\n'
-    + 'Extrae la clave CEDA del folio en la descripcion (ej: PTM-5689).\n\n'
-    + 'BULTOS: Si hay bultos faltantes (enviados != recibidos), reporta cuantos faltan y la razon.\n'
-    + 'Si todos los bultos fueron recibidos, pon "bultos": null.\n\n'
+    + 'La clave CEDA viene en el DESTINO de la descripcion: ej DESTINO: PTM-5689-TLACHICHUCA -> clave PTM-5689.\n'
+    + 'El origen se deduce de la planta de salida en Carta Porte (Coatzacoalcos, Lazaro Cardenas, Ferco Veracruz, Toluca, Salina Cruz, Merida).\n\n'
+    + 'BULTOS: Compara bultos enviados vs bultos recibidos en Carta Porte o remision.\n'
+    + 'Si hay faltantes reporta cantidad y razon. Si todos se recibieron pon "bultos": null.\n\n'
     + 'CAMPOS CRITICOS para aprobar: folio coincide, toneladas coinciden, destino coincide.\n'
     + 'INFORMATIVOS (no bloquean): operador, placas.\n\n'
     + 'Responde SOLO con JSON valido sin markdown ni backticks:\n'
@@ -313,7 +314,8 @@ function buildPrompt(tieneCarta) {
     + '  "bultos": null,\n'
     + '  "errores_criticos": [],\n'
     + '  "observaciones": []\n'
-    + '}';
+    + '}\n'
+    + 'IMPORTANTE campo bultos: si hay faltantes usa {"enviados":N,"recibidos":N,"faltantes":N,"razon":"texto o null"}. Si no hay faltantes pon null exactamente.';
 }
 
 async function validar(factura, carta) {
