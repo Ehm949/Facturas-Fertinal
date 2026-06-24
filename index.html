@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Validador de Facturas — Sol Firma de Negocios</title>
+<title>Validador CFDI — Sol Firma de Negocios</title>
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
   :root{--bg:#0f1117;--surface:#1a1d27;--surface2:#222536;--border:#2e3247;--accent:#4f7ef8;--accent2:#7c5cbf;--ok:#22c55e;--warn:#f59e0b;--err:#ef4444;--text:#e8eaf0;--muted:#6b7280;--r:10px}
@@ -36,6 +36,9 @@
   .fchip .fr:hover{color:var(--err)}
   .fchip select{background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:11px;padding:2px 4px}
   hr.dv{border:none;border-top:1px solid var(--border)}
+  .costbox{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;font-size:12px;line-height:1.7}
+  .costbox b{color:var(--text)}
+  .costbox .big{font-size:18px;font-weight:700;color:var(--accent)}
   .content{flex:1;display:flex;flex-direction:column;overflow:hidden}
   .toolbar{padding:12px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;background:var(--surface);flex-wrap:wrap}
   .ttl{font-size:14px;font-weight:500;flex:1}
@@ -43,7 +46,6 @@
   .bb{background:rgba(79,126,248,.15);color:var(--accent)}
   .bg2{background:rgba(34,197,94,.15);color:var(--ok)}
   .br{background:rgba(239,68,68,.15);color:var(--err)}
-  .by{background:rgba(245,158,11,.15);color:var(--warn)}
   .ra{flex:1;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px}
   .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);text-align:center;padding:40px}
   .empty .ei{font-size:44px;opacity:.35}
@@ -78,12 +80,14 @@
   @keyframes sp{to{transform:rotate(360deg)}}
   .trow{display:flex;gap:6px;flex-wrap:wrap;margin-top:5px}
   .tag{font-size:11px;padding:3px 8px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
+  .note-bultos{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 13px;font-size:13px;color:var(--warn);line-height:1.5}
+  .note-bultos .nb-title{font-weight:600;margin-bottom:4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
 </style>
 </head>
 <body>
 <header>
   <div class="logo">📋</div>
-  <div><h1>Validador CFDI <span>+ Carta Porte — Sol Firma</span></h1></div>
+  <div><h1>Validador CFDI <span>+ Carta Porte — Sol Firma de Negocios</span></h1></div>
 </header>
 <div class="main">
 <div class="sidebar">
@@ -94,6 +98,16 @@
       <button class="btn bg bsm" onclick="toggleKey()">👁</button>
     </div>
     <div style="font-size:11px;color:var(--muted);margin-top:5px">Obtén tu key en <a href="https://console.anthropic.com" target="_blank" style="color:var(--accent)">console.anthropic.com</a></div>
+  </div>
+  <hr class="dv">
+  <div class="costbox">
+    <div style="color:var(--muted);margin-bottom:4px">💰 Costo estimado por factura</div>
+    <div class="big">~$0.75 MXN</div>
+    <div style="color:var(--muted);margin-top:6px;font-size:11px;line-height:1.6">
+      Usando <b style="color:var(--text)">Claude Haiku 4.5</b> (modelo más económico).<br>
+      Con Sonnet 4.6: ~$0.65–$1.00 MXN.<br>
+      <span style="color:var(--ok)">✦ Para reducir costos:</span> cambia el modelo a <code style="background:rgba(255,255,255,.06);padding:1px 4px;border-radius:4px">claude-haiku-4-5-20251001</code> en el código — procesa igual de bien facturas estándar y cuesta <b style="color:var(--text)">~4× menos</b> que Sonnet.
+    </div>
   </div>
   <hr class="dv">
   <div>
@@ -134,7 +148,7 @@ DATOS DEL CLIENTE (SOL FIRMA):
 - RFC: SFN990310U62
 - Razón Social: SOL FIRMA DE NEGOCIOS SA DE CV
 - Régimen Fiscal: 601 - Régimen General de Ley Personas Morales
-- Domicilio Fiscal CP: 09440 (Bretaña 152, San Andrés Tetepilco, Iztapalapa, CDMX)
+- Domicilio Fiscal CP: 09440
 - Uso CFDI: G03 - Gastos en General
 
 TIPO DE COMPROBANTE: I - Ingreso con Complemento Carta Porte
@@ -163,10 +177,17 @@ COMPLEMENTO CARTA PORTE v3.1:
 - Destinatario RFC: SAG941228M54 (Secretaría de Agricultura y Desarrollo Rural)
 - Clave Mercancía: 10171504 - Abono
 
+TARIFA: El precio correcto del viaje es TARIFA × TONELADAS ENVIADAS.
+Por ejemplo, si la tarifa es $749 y se enviaron 36 toneladas, el subtotal debe ser $749 × 36 = $26,964.
+
 COMPARACIÓN FACTURA vs CARTA PORTE — CAMPOS CRÍTICOS:
-1. FOLIO DEL VIAJE: el folio en descripción debe coincidir con el número de folio de la carta porte (superior derecho)
-2. TONELADAS: peso en KG de carta porte / 1000 debe coincidir con toneladas facturadas
+1. FOLIO DEL VIAJE: el folio en descripción debe coincidir con el número de folio de la carta porte (superior derecho, ej: PEM-URE-VZ-5689-2026-021)
+2. TONELADAS: peso en KG de carta porte / 1000 debe coincidir con toneladas en la factura
 3. DESTINO: clave/nombre destino en factura debe coincidir con destino en carta porte
+
+BULTOS: Revisar si la cantidad de bultos enviados coincide con los bultos recibidos.
+- Si hay bultos faltantes: reportar cuántos faltan y la razón indicada en los documentos.
+- Si todos los bultos se recibieron correctamente: NO incluir sección de bultos.
 
 CAMPOS INFORMATIVOS (no bloquean aprobación):
 - Operador (nombre conductor)
@@ -233,7 +254,7 @@ function buscarTarifa(claveCeda, destino, origen){
   const dn=(destino||'').toUpperCase().trim();
   const ccn=(claveCeda||'').toUpperCase().trim();
   const on=(origen||'').toUpperCase().trim();
-  if(ccn){
+  if(ccn&&ccn!=='NAN'){
     const m=TARIFAS.filter(t=>t.cc.toUpperCase()===ccn);
     if(m.length===1)return m[0];
     if(m.length>1){const mo=m.find(t=>on&&t.o.toUpperCase().includes(on.split(' ')[0]));return mo||m[0];}
@@ -289,8 +310,8 @@ Responde SOLO con JSON válido (sin markdown, sin backticks):
     "metodo_pago": "...", "forma_pago": "...", "uso_cfdi": "...",
     "clave_producto": "...", "clave_unidad": "...", "descripcion_concepto": "..."
   },
-  "datos_carta_porte": ${tieneCarta ? '{"folio_carta":"...","toneladas":"...","destino_nombre":"...","destino_clave":"...","operador":"...","placas_vehiculo":"...","remitente":"...","destinatario":"..."}' : 'null'},
-  "comparacion": ${tieneCarta ? '{"folio_coincide":true,"folio_factura":"...","folio_carta":"...","toneladas_coinciden":true,"toneladas_factura":"...","toneladas_carta":"...","destino_coincide":true,"destino_factura":"...","destino_carta":"...","operador_coincide":true,"operador_factura":"...","operador_carta":"...","placas_coinciden":true,"placas_factura":"...","placas_carta":"..."}' : 'null'},
+  "datos_carta_porte": ${f'{"folio_carta":"...","toneladas":"...","destino_nombre":"...","destino_clave":"...","operador":"...","placas_vehiculo":"...","remitente":"...","destinatario":"...","bultos_enviados":0,"bultos_recibidos":0,"bultos_faltantes":0,"razon_faltantes":null}' if tieneCarta else 'null'},
+  "comparacion": ${f'{"folio_coincide":true,"folio_factura":"...","folio_carta":"...","toneladas_coinciden":true,"toneladas_factura":"...","toneladas_carta":"...","destino_coincide":true,"destino_factura":"...","destino_carta":"...","operador_coincide":true,"operador_factura":"...","operador_carta":"...","placas_coinciden":true,"placas_factura":"...","placas_carta":"..."}' if tieneCarta else 'null'},
   "validacion_campos": [
     {"campo":"RFC receptor","ok":true,"valor":"...","esperado":"SFN990310U62","detalle":""},
     {"campo":"Razon social receptor","ok":true,"valor":"...","esperado":"SOL FIRMA DE NEGOCIOS SA DE CV","detalle":""},
@@ -309,23 +330,31 @@ Responde SOLO con JSON válido (sin markdown, sin backticks):
     {"campo":"Folio viaje en descripcion","ok":true,"valor":"...","esperado":"Presente en descripcion","detalle":""}
   ],
   "validacion_precio": {
-    "clave_ceda_detectada": "PTM-5689",
-    "origen_detectado": "Coatzacoalcos",
-    "tarifa_esperada": null,
-    "tarifa_facturada": "...",
+    "clave_ceda_detectada": "PTM-5689 (extrae de la descripcion del concepto)",
+    "origen_detectado": "Coatzacoalcos / Lázaro Cárdenas / etc",
+    "toneladas": 36,
+    "tarifa_unitaria_facturada": "precio por tonelada segun la factura (subtotal / toneladas)",
+    "subtotal_facturado": "...",
+    "tarifa_esperada_unitaria": null,
+    "subtotal_esperado": null,
     "precio_correcto": null,
-    "nota": "El sistema verificará con tarifario local"
+    "nota": "El sistema calculara subtotal_esperado = tarifa_unitaria x toneladas"
   },
+  "bultos": null,
   "errores_criticos": [],
   "observaciones": []
-}`;
+}
+
+IMPORTANTE sobre bultos: Si hay bultos faltantes en la carta porte, llena el campo "bultos" asi:
+{"enviados": 1440, "recibidos": 1400, "faltantes": 40, "razon": "motivo indicado en el documento o null si no se especifica"}
+Si todos los bultos fueron recibidos correctamente, deja "bultos" como null.`;
 
   content.push({type:'text',text:prompt});
 
   const resp=await fetch('https://api.anthropic.com/v1/messages',{
     method:'POST',
     headers:{'Content-Type':'application/json','x-api-key':apiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify({model:'claude-sonnet-4-6',max_tokens:2500,messages:[{role:'user',content}]})
+    body:JSON.stringify({model:'claude-haiku-4-5-20251001',max_tokens:2500,messages:[{role:'user',content}]})
   });
 
   if(!resp.ok){const e=await resp.json().catch(()=>({}));throw new Error(e.error?.message||'Error HTTP '+resp.status)}
@@ -334,29 +363,38 @@ Responde SOLO con JSON válido (sin markdown, sin backticks):
   const clean=txt.replace(/```json|```/g,'').trim();
   let result;
   try{result=JSON.parse(clean)}
-  catch{result={veredicto:'con_observaciones',resumen:'Análisis completado (respuesta no estructurada): '+txt.slice(0,200),validacion_campos:[],errores_criticos:[],observaciones:[]}}
+  catch{result={veredicto:'con_observaciones',resumen:'Análisis completado: '+txt.slice(0,200),validacion_campos:[],errores_criticos:[],observaciones:[],bultos:null}}
 
-  // Post-proceso tarifa
+  // Post-proceso: validación de precio = tarifa × toneladas
   if(result.validacion_precio){
     const vp=result.validacion_precio;
     const match=buscarTarifa(vp.clave_ceda_detectada, result.datos_factura?.destino_nombre, vp.origen_detectado);
     if(match){
-      vp.tarifa_esperada='$'+match.t+' ('+match.o+' → '+match.d+')';
-      const facturado=parseFloat((result.datos_factura?.subtotal||'').replace(/[,$\s]/g,''));
-      const esperado=parseFloat(match.t);
-      if(!isNaN(facturado)&&!isNaN(esperado)){
-        const diff=Math.abs(facturado-esperado);
-        vp.precio_correcto=diff<=esperado*0.01;
+      const tarifaUnit=parseFloat(match.t);
+      const tons=parseFloat(vp.toneladas)||parseFloat(result.datos_factura?.toneladas_facturadas)||0;
+      const subtotalEsperado=tarifaUnit*tons;
+      const subtotalFacturado=parseFloat((vp.subtotal_facturado||result.datos_factura?.subtotal||'').replace(/[,$\s]/g,''));
+
+      vp.tarifa_esperada_unitaria='$'+match.t+'/ton ('+match.o+' → '+match.d+')';
+      vp.subtotal_esperado='$'+(subtotalEsperado.toFixed(2))+' ('+match.t+' × '+tons+' ton)';
+
+      if(!isNaN(subtotalFacturado)&&subtotalEsperado>0){
+        const diff=Math.abs(subtotalFacturado-subtotalEsperado);
+        vp.precio_correcto=diff<=subtotalEsperado*0.01;
         if(!vp.precio_correcto){
-          vp.nota='Diferencia de $'+(facturado-esperado).toFixed(2)+' vs tarifa de '+match.o;
+          vp.nota='Subtotal facturado ($'+subtotalFacturado+') difiere del esperado ($'+subtotalEsperado.toFixed(2)+'). Diferencia: $'+(subtotalFacturado-subtotalEsperado).toFixed(2);
           if(!result.errores_criticos)result.errores_criticos=[];
-          result.errores_criticos.push('Precio facturado ($'+facturado+') difiere de tarifa ($'+esperado+') para '+match.d);
+          result.errores_criticos.push('Precio incorrecto: se facturó $'+subtotalFacturado+' pero debería ser $'+subtotalEsperado.toFixed(2)+' (tarifa $'+match.t+' × '+tons+' ton)');
           if(result.veredicto==='aprobada')result.veredicto='rechazada';
-        }else{vp.nota='Precio correcto según tarifario de '+match.o;}
+        }else{
+          vp.nota='Precio correcto: $'+match.t+'/ton × '+tons+' ton = $'+subtotalEsperado.toFixed(2);
+        }
+      }else{
+        vp.nota='No se pudo calcular (tons='+tons+', subtotal='+subtotalFacturado+')';
       }
     }else{
-      vp.tarifa_esperada='No encontrada en tarifario';
-      vp.nota='No se pudo verificar el precio — revisa la clave CEDA y el destino';
+      vp.tarifa_esperada_unitaria='No encontrada en tarifario';
+      vp.nota='Revisa la clave CEDA en la descripción del concepto';
     }
   }
   return result;
@@ -406,12 +444,27 @@ function renderCard(id,estado,data,fnombre,cnombre){
   if(data.validacion_precio){
     const vp=data.validacion_precio;
     const pc=vp.precio_correcto===true?'cmatch':vp.precio_correcto===false?'cmis':'';
-    precio=`<div class="csec"><div class="cst">💰 Validación de precio vs tarifario</div>
+    precio=`<div class="csec"><div class="cst">💰 Validación de precio (tarifa × toneladas)</div>
       <div class="cgrid">
-        <div class="cbox"><div class="cbl">Tarifa en tarifario</div><div class="cbv">${vp.tarifa_esperada||'—'}</div></div>
-        <div class="cbox ${pc}"><div class="cbl">Subtotal facturado</div><div class="cbv">${data.datos_factura?.subtotal||'—'}</div></div>
+        <div class="cbox"><div class="cbl">Tarifa unitaria en tarifario</div><div class="cbv">${vp.tarifa_esperada_unitaria||'—'}</div></div>
+        <div class="cbox"><div class="cbl">Subtotal esperado</div><div class="cbv">${vp.subtotal_esperado||'—'}</div></div>
+        <div class="cbox ${pc}"><div class="cbl">Subtotal facturado</div><div class="cbv">${vp.subtotal_facturado||data.datos_factura?.subtotal||'—'}</div></div>
+        <div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">${vp.toneladas||data.datos_factura?.toneladas_facturadas||'—'} ton</div></div>
       </div>
       ${vp.nota?'<div style="font-size:12px;color:var(--muted);margin-top:7px">'+vp.nota+'</div>':''}</div>`;
+  }
+
+  // Sección de bultos faltantes (solo si hay faltantes)
+  let bultos='';
+  if(data.bultos&&data.bultos.faltantes>0){
+    bultos=`<div class="csec">
+      <div class="cst">📦 Bultos faltantes</div>
+      <div class="note-bultos">
+        <div class="nb-title">⚠️ Se detectaron bultos no recibidos</div>
+        <div>Enviados: <b>${data.bultos.enviados}</b> &nbsp;|&nbsp; Recibidos: <b>${data.bultos.recibidos}</b> &nbsp;|&nbsp; Faltantes: <b>${data.bultos.faltantes}</b></div>
+        ${data.bultos.razon?`<div style="margin-top:5px">Razón: ${data.bultos.razon}</div>`:'<div style="margin-top:5px;opacity:.7">No se especificó razón en los documentos</div>'}
+      </div>
+    </div>`;
   }
 
   const errs=(data.errores_criticos||[]).length?`<div class="csec"><div class="cst">🚨 Errores críticos</div>
@@ -422,7 +475,7 @@ function renderCard(id,estado,data,fnombre,cnombre){
   card.querySelector('.cb').innerHTML=`
     <div class="vbox ${vc}" style="margin-bottom:12px">${vi} ${data.resumen||'Análisis completado'}</div>
     ${cnombre?`<div class="trow" style="margin-bottom:12px"><span class="tag">🧾 ${fnombre}</span><span class="tag" style="background:rgba(124,92,191,.1);color:#a78bfa;border-color:#a78bfa33">🗺️ ${cnombre}</span></div>`:''}
-    ${comp}${precio}
+    ${comp}${precio}${bultos}
     ${campos?`<div class="csec"><div class="cst">✅ Checklist de campos obligatorios</div>${campos}</div>`:''}
     ${errs}${obs}`;
 }
