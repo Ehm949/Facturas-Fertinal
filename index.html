@@ -595,41 +595,59 @@ function renderCard(id, estado, data, fnombre, cnombre) {
       + '</div></div>';
   }
 
+  // Fiscal section: built from datos_factura (always available) + validacion_precio (bonus)
   var precio = '';
-  if (data.validacion_precio) {
-    var vp = data.validacion_precio;
-    function cell(label, esperado, real, ok) {
-      var cls = ok === true ? 'cmatch' : ok === false ? 'cmis' : '';
-      return '<div class="cbox ' + cls + '">'
-        + '<div class="cbl">' + label + '</div>'
-        + '<div class="cbv">' + (real || '&#x2014;') + '</div>'
-        + (esperado ? '<div class="cd">Esperado: ' + esperado + '</div>' : '')
-        + '</div>';
-    }
-    var pc = vp.precio_correcto === true ? 'cmatch' : vp.precio_correcto === false ? 'cmis' : '';
-    var subtotalReal = vp.subtotal_real_num > 0 ? '$' + vp.subtotal_real_num.toFixed(2) : (vp.subtotal_facturado || (data.datos_factura ? data.datos_factura.subtotal : '') || '&#x2014;');
-    var tarifaInfo = vp.tarifa_esperada_unitaria
-      ? ' &nbsp;|&nbsp; Tarifa: <b style="color:var(--text)">' + vp.tarifa_esperada_unitaria + '</b>'
-      : ' &nbsp;|&nbsp; <span style="color:var(--warn)">Tarifa no encontrada en tarifario</span>';
-    precio = '<div class="csec">'
-      + '<div class="cst">&#x1F4B0; Validacion de precio y desglose fiscal</div>'
-      + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
-      + 'Ruta: <b style="color:var(--text)">' + (vp.origen_detectado || '?') + '</b>'
-      + ' &#x2192; <b style="color:var(--text)">' + (vp.destino_detectado || (data.datos_factura ? data.datos_factura.destino_nombre : '') || '?') + '</b>'
-      + ' &nbsp;|&nbsp; ' + (vp.toneladas || 0) + ' ton'
-      + tarifaInfo
-      + '</div>'
-      + '<div class="cgrid">'
-      + cell('Subtotal facturado', vp.subtotal_esperado, subtotalReal, vp.precio_correcto)
-      + cell('IVA 16% facturado',  vp.iva_trasladado_esperado, vp.iva_trasladado_real, vp.iva_trasladado_correcto)
-      + cell('IVA ret. 4% facturado', vp.iva_retenido_esperado, vp.iva_retenido_real, vp.iva_retenido_correcto)
-      + cell('ISR retenido (1.25% si RESICO)', vp.isr_retenido_esperado, vp.isr_retenido_real, null)
-      + cell('TOTAL facturado', vp.total_esperado, vp.total_real, vp.total_correcto)
-      + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + (vp.toneladas || '&#x2014;') + ' ton</div></div>'
-      + '</div>'
-      + (vp.nota ? '<div style="font-size:12px;color:var(--muted);margin-top:7px">' + vp.nota + '</div>' : '')
+  var df2 = data.datos_factura || {};
+  var vp2 = data.validacion_precio || {};
+
+  function cell(label, esperado, real, ok) {
+    var cls = ok === true ? 'cmatch' : ok === false ? 'cmis' : '';
+    return '<div class="cbox ' + cls + '">'
+      + '<div class="cbl">' + label + '</div>'
+      + '<div class="cbv">' + (real || '&#x2014;') + '</div>'
+      + (esperado ? '<div class="cd">Esperado: ' + esperado + '</div>' : '')
       + '</div>';
   }
+
+  // Read real values: prefer vp2 fields, fallback to df2
+  var subtotalFact = vp2.subtotal_facturado || df2.subtotal || '';
+  var ivaTraslFact = vp2.iva_trasladado_facturado || df2.iva_trasladado || '';
+  var ivaRetFact   = vp2.iva_retenido_facturado   || df2.iva_retenido   || '';
+  var isrRetFact   = vp2.isr_retenido_facturado    || df2.isr_retenido   || '';
+  var totalFact    = vp2.total_facturado            || df2.total          || '';
+  var tonsDisp     = vp2.toneladas || df2.toneladas_facturadas || '?';
+  var origenDisp   = vp2.origen_detectado  || df2.origen_detectado  || '?';
+  var destinoDisp  = vp2.destino_detectado || df2.destino_nombre    || '?';
+
+  // Use pre-computed values from post-process if available
+  var subtotalReal = vp2.iva_trasladado_real ? (vp2.subtotal_real_num > 0 ? '$' + Number(vp2.subtotal_real_num).toFixed(2) : subtotalFact) : subtotalFact;
+  var ivaTraslReal = vp2.iva_trasladado_real || ivaTraslFact;
+  var ivaRetReal   = vp2.iva_retenido_real   || ivaRetFact;
+  var isrRetReal   = vp2.isr_retenido_real   || (isrRetFact && isrRetFact !== '0' ? isrRetFact : 'No aplica');
+  var totalReal    = vp2.total_real          || totalFact;
+
+  var tarifaInfo = vp2.tarifa_esperada_unitaria
+    ? ' &nbsp;|&nbsp; Tarifa en tarifario: <b style="color:var(--text)">' + vp2.tarifa_esperada_unitaria + '</b>'
+    : ' &nbsp;|&nbsp; <span style="color:var(--warn)">Tarifa no encontrada en tarifario</span>';
+
+  precio = '<div class="csec">'
+    + '<div class="cst">&#x1F4B0; Validacion de precio y desglose fiscal</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
+    + 'Ruta: <b style="color:var(--text)">' + origenDisp + '</b>'
+    + ' &#x2192; <b style="color:var(--text)">' + destinoDisp + '</b>'
+    + ' &nbsp;|&nbsp; ' + tonsDisp + ' ton'
+    + tarifaInfo
+    + '</div>'
+    + '<div class="cgrid">'
+    + cell('Subtotal', vp2.subtotal_esperado, subtotalReal, vp2.precio_correcto)
+    + cell('IVA trasladado 16%', vp2.iva_trasladado_esperado, ivaTraslReal, vp2.iva_trasladado_correcto)
+    + cell('IVA retenido 4%',   vp2.iva_retenido_esperado,   ivaRetReal,   vp2.iva_retenido_correcto)
+    + cell('ISR retenido (RESICO 1.25%)', vp2.isr_retenido_esperado, isrRetReal, null)
+    + cell('TOTAL', vp2.total_esperado, totalReal, vp2.total_correcto)
+    + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + tonsDisp + ' ton</div></div>'
+    + '</div>'
+    + (vp2.nota ? '<div style="font-size:12px;color:var(--muted);margin-top:7px">' + vp2.nota + '</div>' : '')
+    + '</div>';
 
   var bultos = '';
   if (data.bultos && data.bultos.faltantes > 0) {
