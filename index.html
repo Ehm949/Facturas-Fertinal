@@ -275,7 +275,10 @@ function buildPrompt(tieneCarta) {
     + 'Si hay faltantes reporta cantidad y razon. Si todos se recibieron pon "bultos": null.\n\n'
     + 'CAMPOS CRITICOS para aprobar: folio coincide, toneladas coinciden, destino coincide.\n'
     + 'INFORMATIVOS (no bloquean): operador, placas.\n\n'
-    + 'INSTRUCCION CRITICA: Tu respuesta debe empezar con el caracter { y terminar con el caracter }. Nada mas. No escribas json ni ninguna palabra antes. No uses bloques de codigo. No uses comillas invertidas. Solo el objeto JSON puro.\n'
+    + 'INSTRUCCION CRITICA: Responde SOLO con JSON puro. Empieza con { termina con }. '
+    + 'En los valores de string NO uses comillas dobles, apostrofes, ni saltos de linea. '
+    + 'Si necesitas incluir comillas en un valor, omitelas o usa parentesis en su lugar. '
+    + 'Todos los valores de string deben ser texto simple en una sola linea.\n'
     + '{\n'
     + '  "veredicto": "aprobada" | "rechazada" | "con_observaciones",\n'
     + '  "resumen": "...",\n'
@@ -353,7 +356,7 @@ async function validar(factura, carta) {
 
   var data = await resp.json();
   var txt = data.content.map(function(i){ return i.text || ''; }).join('');
-  // Extract JSON: always find first { to last } - works regardless of markdown
+  // Extract JSON robustly
   var firstBrace = txt.indexOf('{');
   var lastBrace = txt.lastIndexOf('}');
   var clean = (firstBrace >= 0 && lastBrace > firstBrace)
@@ -362,15 +365,59 @@ async function validar(factura, carta) {
   var result;
   try {
     result = JSON.parse(clean);
-  } catch(e) {
-    result = {
-      veredicto: 'con_observaciones',
-      resumen: 'La respuesta de Claude no pudo parsearse. Extracto: ' + txt.slice(0, 300),
-      validacion_campos: [],
-      errores_criticos: ['Error interno de parseo: ' + e.message],
-      observaciones: [],
-      bultos: null
-    };
+  } catch(e1) {
+    // Claude sometimes returns unescaped characters inside string values.
+    // Strategy: parse line by line, truncating at the first broken line.
+    // Better strategy: use a forgiving JSON approach.
+    try {
+      // Remove control characters and fix common issues
+      var fixed = clean
+        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')   // remove bad control chars (keep \n \r \t)
+        .replace(/\n/g, ' ')                                    // flatten newlines inside values
+        .replace(/\r/g, '')
+        .replace(/([^\\])\\([^"\\/bfnrtu])/g, '$1\\\\$2'); // fix bad escape sequences
+      result = JSON.parse(fixed);
+    } catch(e2) {
+      // Last resort: build a minimal result from what we can read from the text
+      var verdRaw = txt.match(/"veredicto"\s*:\s*"([^"]+)"/);
+      var resuRaw = txt.match(/"resumen"\s*:\s*"([^"]+)"/);
+      var verd = verdRaw ? verdRaw[1] : 'con_observaciones';
+      var resu = resuRaw ? resuRaw[1] : 'Analisis recibido pero con formato invalido';
+      // Extract validacion_campos items individually
+      var camposResult = [];
+      var campoRgx = /"campo"\s*:\s*"([^"]+)"[^}]*"ok"\s*:\s*(true|false)[^}]*"valor"\s*:\s*"([^"]*)"[^}]*"esperado"\s*:\s*"([^"]*)"[^}]*"detalle"\s*:\s*"([^"]*)"/g;
+      var cm;
+      while ((cm = campoRgx.exec(txt)) !== null) {
+        camposResult.push({ campo: cm[1], ok: cm[2] === 'true', valor: cm[3], esperado: cm[4], detalle: cm[5] });
+      }
+      // Extract errores_criticos
+      var errsResult = [];
+      var errRgx = /"errores_criticos"\s*:\s*\[([^\]]*?)\]/;
+      var errMatch = txt.match(errRgx);
+      if (errMatch) {
+        var errItems = errMatch[1].match(/"([^"]+)"/g);
+        if (errItems) errsResult = errItems.map(function(s){ return s.replace(/"/g,''); });
+      }
+      // Extract observaciones
+      var obsResult = [];
+      var obsRgx = /"observaciones"\s*:\s*\[([^\]]*?)\]/;
+      var obsMatch = txt.match(obsRgx);
+      if (obsMatch) {
+        var obsItems = obsMatch[1].match(/"([^"]+)"/g);
+        if (obsItems) obsResult = obsItems.map(function(s){ return s.replace(/"/g,''); });
+      }
+      result = {
+        veredicto: verd,
+        resumen: resu,
+        validacion_campos: camposResult,
+        errores_criticos: errsResult,
+        observaciones: obsResult,
+        bultos: null,
+        datos_factura: null,
+        comparacion: null,
+        validacion_precio: null
+      };
+    }
   }
 
   // Post-proceso: tarifa x toneladas
