@@ -275,7 +275,7 @@ function buildPrompt(tieneCarta) {
     + 'Si hay faltantes reporta cantidad y razon. Si todos se recibieron pon "bultos": null.\n\n'
     + 'CAMPOS CRITICOS para aprobar: folio coincide, toneladas coinciden, destino coincide.\n'
     + 'INFORMATIVOS (no bloquean): operador, placas.\n\n'
-    + 'Responde SOLO con JSON valido sin markdown ni backticks:\n'
+    + 'IMPORTANTE: Responde UNICAMENTE con el objeto JSON. Sin texto antes ni despues. Sin markdown. Sin bloques de codigo. Sin backticks. Empieza directamente con { y termina con }.\n'
     + '{\n'
     + '  "veredicto": "aprobada" | "rechazada" | "con_observaciones",\n'
     + '  "resumen": "...",\n'
@@ -353,10 +353,24 @@ async function validar(factura, carta) {
 
   var data = await resp.json();
   var txt = data.content.map(function(i){ return i.text || ''; }).join('');
-  var clean = txt.replace(/\x60\x60\x60json|\x60\x60\x60/g, '').trim();
+  // Strip markdown fences and extract JSON robustly
+  var clean = txt;
+  // Remove ```json ... ``` or ``` ... ``` wrappers
+  var fenceMatch = clean.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenceMatch) { clean = fenceMatch[1]; }
+  // Find first { and last } to extract JSON object
+  var firstBrace = clean.indexOf('{');
+  var lastBrace = clean.lastIndexOf('}');
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    clean = clean.slice(firstBrace, lastBrace + 1);
+  }
+  clean = clean.trim();
   var result;
   try { result = JSON.parse(clean); }
-  catch(e) { result = { veredicto: 'con_observaciones', resumen: 'Analisis completado. ' + txt.slice(0,150), validacion_campos: [], errores_criticos: [], observaciones: [], bultos: null }; }
+  catch(e) {
+    // Last resort: try to fix common JSON issues
+    result = { veredicto: 'con_observaciones', resumen: 'Error al parsear respuesta de Claude. Respuesta recibida: ' + txt.slice(0, 200), validacion_campos: [], errores_criticos: ['No se pudo parsear la respuesta JSON de Claude'], observaciones: [], bultos: null };
+  }
 
   // Post-proceso: tarifa x toneladas
   if (result.validacion_precio) {
