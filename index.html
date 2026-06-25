@@ -78,6 +78,15 @@ hr.dv{border:none;border-top:1px solid var(--border)}
 .tag{font-size:11px;padding:3px 8px;border-radius:20px;background:var(--surface2);border:1px solid var(--border);color:var(--muted)}
 .note-bultos{background:rgba(245,158,11,.07);border:1px solid rgba(245,158,11,.25);border-radius:8px;padding:10px 13px;font-size:13px;color:var(--warn);line-height:1.5}
 .note-bultos .nb-title{font-weight:600;margin-bottom:4px;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+.tarifas-table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+.tarifas-table th{background:var(--surface2);color:var(--muted);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border)}
+.tarifas-table td{padding:7px 10px;border-bottom:1px solid rgba(255,255,255,.04);font-family:"JetBrains Mono",monospace;font-size:12px}
+.tarifas-table tr:hover td{background:rgba(255,255,255,.03)}
+.tarifas-table tr.match-row td{background:rgba(79,126,248,.08)}
+.tarifas-table tr.match-row td:first-child{border-left:3px solid var(--accent)}
+.tarifas-table td.subtotal-cell{font-weight:600;color:var(--text)}
+.tarifas-table td.match-cell{color:var(--ok);font-weight:700}
+.tarifas-table td.close-cell{color:var(--warn)}
 </style>
 </head>
 <body>
@@ -607,6 +616,22 @@ async function validar(factura, carta) {
     var origenTexto = df.origen_detectado || vp.origen_detectado || '';
     var match = buscarTarifa(claveDestino, destinoNombre, origenTexto, folioViaje);
 
+    // Find ALL tarifas for this destination across all origins
+    var claveCEDAkey = extraerClaveCEDA(claveDestino);
+    var numFolioKey  = extraerNumeroFolio(folioViaje || claveDestino);
+    var todasTarifas = [];
+    if (claveCEDAkey) {
+      todasTarifas = TARIFAS.filter(function(t){ return t.cc === claveCEDAkey; });
+    }
+    if (!todasTarifas.length && numFolioKey) {
+      todasTarifas = TARIFAS.filter(function(t){ return t.cc.replace(/[^0-9]/g,'') === numFolioKey; });
+    }
+    if (!todasTarifas.length && destinoNombre && destinoNombre.length >= 4) {
+      var dnUp = destinoNombre.toUpperCase();
+      todasTarifas = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(dnUp) >= 0; });
+    }
+    vp.todas_tarifas = todasTarifas;
+
     // ALWAYS populate fiscal real values from invoice data regardless of match
     var ivaTrasladadoReal = parseFloat((vp.iva_trasladado_facturado || df.iva_trasladado || '').replace(/[$,\s]/g,''));
     var ivaRetenidoReal   = parseFloat((vp.iva_retenido_facturado   || df.iva_retenido  || '').replace(/[$,\s]/g,''));
@@ -664,6 +689,59 @@ async function validar(factura, carta) {
   return result;
 }
 
+function buildTarifasTable(tarifas, subtotalFacturado, toneladas) {
+  var tons = parseFloat(toneladas) || 0;
+  var subtotalFact = parseFloat(subtotalFacturado) || 0;
+
+  var rows = '';
+  for (var i = 0; i < tarifas.length; i++) {
+    var t = tarifas[i];
+    var tarifaNum = parseFloat(t.t);
+    var subtotalEsp = tons > 0 ? tarifaNum * tons : 0;
+    var diff = subtotalFact > 0 && subtotalEsp > 0 ? subtotalFact - subtotalEsp : null;
+    var esMatch = diff !== null && Math.abs(diff) <= subtotalEsp * 0.01;
+    var esCercano = diff !== null && !esMatch && Math.abs(diff) <= subtotalEsp * 0.05;
+
+    var rowClass = esMatch ? ' class="match-row"' : '';
+    var matchIcon = esMatch ? ' &#x2705;' : (esCercano ? ' &#x26A0;&#xFE0F;' : '');
+    var subtotalClass = esMatch ? 'subtotal-cell match-cell' : (esCercano ? 'subtotal-cell close-cell' : 'subtotal-cell');
+    var diffStr = diff !== null ? (diff > 0 ? '+$' + diff.toFixed(2) : '-$' + Math.abs(diff).toFixed(2)) : '&#x2014;';
+    var diffColor = diff === null ? '' : (esMatch ? 'color:var(--ok)' : (diff < 0 ? 'color:var(--err)' : 'color:var(--warn)'));
+
+    rows += '<tr' + rowClass + '>'
+      + '<td>' + t.o.replace('Fertinal ','') + matchIcon + '</td>'
+      + '<td>$' + t.t + '/ton</td>'
+      + '<td class="' + subtotalClass + '">' + (subtotalEsp > 0 ? '$' + subtotalEsp.toFixed(2) : '&#x2014;') + '</td>'
+      + '<td style="' + diffColor + '">' + diffStr + '</td>'
+      + '</tr>';
+  }
+
+  var clave = tarifas[0] ? tarifas[0].cc : '';
+  var destino = tarifas[0] ? tarifas[0].d : '';
+
+  return '<div class="csec" style="margin-top:14px">'
+    + '<div class="cst">&#x1F4CA; Tarifas disponibles para este destino</div>'
+    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px">'
+    + 'Clave: <b style="color:var(--text)">' + clave + '</b>'
+    + ' &nbsp;&#x2022;&nbsp; Destino: <b style="color:var(--text)">' + destino + '</b>'
+    + (tons > 0 ? ' &nbsp;&#x2022;&nbsp; ' + tons + ' ton' : '')
+    + (subtotalFact > 0 ? ' &nbsp;&#x2022;&nbsp; Facturado: <b style="color:var(--text)">$' + subtotalFact.toFixed(2) + '</b>' : '')
+    + '</div>'
+    + '<table class="tarifas-table">'
+    + '<thead><tr>'
+    + '<th>Origen</th>'
+    + '<th>Tarifa/ton</th>'
+    + '<th>Subtotal esperado</th>'
+    + '<th>Diferencia vs factura</th>'
+    + '</tr></thead>'
+    + '<tbody>' + rows + '</tbody>'
+    + '</table>'
+    + '<div style="font-size:11px;color:var(--muted);margin-top:6px">'
+    + '&#x2705; = precio coincide &nbsp; &#x26A0;&#xFE0F; = diferencia menor al 5% &nbsp; Fila azul = mejor coincidencia'
+    + '</div>'
+    + '</div>';
+}
+
 function renderCard(id, estado, data, fnombre, cnombre) {
   var card = document.getElementById(id);
   if (!card) return;
@@ -714,6 +792,7 @@ function renderCard(id, estado, data, fnombre, cnombre) {
   var precio = '';
   var df2 = data.datos_factura || {};
   var vp2 = data.validacion_precio || {};
+  var todasTarifas2 = vp2.todas_tarifas || [];
 
   // Extraer directamente de descripcion_concepto si los campos estan vacios
   var desc2 = (df2.descripcion_concepto || '').toUpperCase();
@@ -809,6 +888,7 @@ function renderCard(id, estado, data, fnombre, cnombre) {
     + '<div class="cbox"><div class="cbl">Formula del total</div><div class="cbv" style="font-size:11px;color:var(--muted);line-height:1.6">Subtotal + IVA 16%<br>- IVA ret. 4%' + (esResico ? '<br>- ISR 1.25%' : '') + '</div></div>'
     + '</div>'
     + (vp2.nota ? '<div style="font-size:12px;color:var(--muted);margin-top:8px">&#x2139;&#xFE0F; ' + vp2.nota + '</div>' : '')
+    + (todasTarifas2.length > 0 ? buildTarifasTable(todasTarifas2, vp2.subtotal_real_num || num(subtotalV), vp2.toneladas || tonsV) : '')
     + '</div>';
 
   var bultos = '';
