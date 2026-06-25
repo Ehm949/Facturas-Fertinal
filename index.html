@@ -583,9 +583,20 @@ async function validar(factura, carta) {
   if (result.validacion_precio) {
     var vp = result.validacion_precio;
     var df = result.datos_factura || {};
-    var folioViaje = df.folio_viaje || vp.clave_ceda_detectada || '';
-    // Usar clave CEDA completa del DESTINO (ej: HCL-4935-CHILCUAUTLA) para busqueda precisa
-    var claveDestino = df.clave_destino || vp.clave_ceda_detectada || '';
+
+    // ── EXTRACCION DIRECTA desde descripcion_concepto ─────────────────────────
+    // La descripcion siempre contiene: "DESTINO: HCL-4935-CHILCUAUTLA"
+    // Esto es mas confiable que esperar que Claude devuelva clave_destino bien
+    var desc = (df.descripcion_concepto || '').toUpperCase();
+    var claveFromDesc = null;
+    var folioFromDesc = null;
+    var mDest = desc.match(/DESTINO:\s*([A-Z]{2,4}-\d{4,5}-[A-Z]+)/);
+    if (mDest) claveFromDesc = mDest[1];
+    var mFolio = desc.match(/FOLIO:\s*(PEM-[A-Z0-9\-]+)/);
+    if (mFolio) folioFromDesc = mFolio[1];
+
+    var folioViaje = folioFromDesc || df.folio_viaje || vp.clave_ceda_detectada || '';
+    var claveDestino = claveFromDesc || df.clave_destino || vp.clave_ceda_detectada || '';
     var destinoNombre = df.destino_nombre || vp.destino_detectado || '';
     var origenTexto = df.origen_detectado || vp.origen_detectado || '';
     var match = buscarTarifa(claveDestino, destinoNombre, origenTexto, folioViaje);
@@ -697,6 +708,24 @@ function renderCard(id, estado, data, fnombre, cnombre) {
   var precio = '';
   var df2 = data.datos_factura || {};
   var vp2 = data.validacion_precio || {};
+
+  // Extraer directamente de descripcion_concepto si los campos estan vacios
+  var desc2 = (df2.descripcion_concepto || '').toUpperCase();
+  if (!df2.clave_destino || df2.clave_destino === '...') {
+    var mD2 = desc2.match(/DESTINO:\s*([A-Z]{2,4}-\d{4,5}-[A-Z]+)/);
+    if (mD2) df2.clave_destino = mD2[1];
+  }
+  if (!df2.folio_viaje || df2.folio_viaje === '...') {
+    var mF2 = desc2.match(/FOLIO:\s*(PEM-[A-Z0-9\-]+)/);
+    if (mF2) df2.folio_viaje = mF2[1];
+  }
+  if (!df2.destino_nombre || df2.destino_nombre === '...') {
+    // Extract city from clave_destino: HCL-4935-CHILCUAUTLA -> CHILCUAUTLA
+    if (df2.clave_destino) {
+      var partsD = df2.clave_destino.split('-');
+      if (partsD.length >= 3) df2.destino_nombre = partsD.slice(2).join(' ');
+    }
+  }
 
   function fmt(val) {
     // Parse any monetary string to display cleanly
