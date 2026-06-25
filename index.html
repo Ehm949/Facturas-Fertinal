@@ -97,14 +97,14 @@ hr.dv{border:none;border-top:1px solid var(--border)}
   </div>
   <hr class="dv">
   <div>
-    <div class="slabel">&#x1F4C2; Subir archivos (PDF o imagen)</div>
+    <div class="slabel">&#x1F4C2; Subir PDFs (Factura + Carta Porte)</div>
     <label for="fi" class="drop" id="dz" ondragover="doDrag(event,true)" ondragleave="doDrag(event,false)" ondrop="doDrop(event)">
-      <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple id="fi" onchange="handleFiles(this.files)" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
+      <input type="file" accept=".pdf" multiple id="fi" onchange="handleFiles(this.files)" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none">
       <div class="di">&#x1F4C4;</div>
-      <div class="dl"><b>Haz clic aqui para seleccionar archivos</b><br>PDF, JPG, PNG o WEBP</div>
+      <div class="dl"><b>Haz clic aqui para seleccionar PDFs</b><br>o arrastra los archivos aqui</div>
     </label>
     <div id="flist" class="flist"></div>
-    <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Sube la <b>factura</b> (PDF) y la <b>Carta Porte</b> (PDF o imagen JPG/PNG).</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5">Sube los dos PDFs del mismo viaje: la <b>factura</b> (CFDI) y la <b>Carta Porte</b>.</div>
   </div>
   <hr class="dv">
   <button class="btn bp" onclick="procesarTodas()" style="width:100%">&#x26A1; Validar facturas</button>
@@ -148,20 +148,12 @@ function doDrop(e) {
   handleFiles(e.dataTransfer.files);
 }
 
-function isImage(f) {
-  return f.type.indexOf('image/') === 0 || /\.(jpg|jpeg|png|webp)$/i.test(f.name);
-}
-function isPDF(f) {
-  return f.type === 'application/pdf' || /\.pdf$/i.test(f.name);
-}
 function handleFiles(files) {
   for (var i = 0; i < files.length; i++) {
     var f = files[i];
-    if (!isPDF(f) && !isImage(f)) continue;
+    if (f.type !== 'application/pdf') continue;
     var n = f.name.toLowerCase();
-    var esCarta = n.indexOf('carta') >= 0 || n.indexOf('porte') >= 0
-      || n.indexOf('cpi_') >= 0 || n.startsWith('cpi')
-      || n.indexOf('cierre') >= 0 || isImage(f);
+    var esCarta = n.indexOf('carta') >= 0 || n.indexOf('porte') >= 0 || n.indexOf('cpi_') >= 0 || n.startsWith('cpi');
     archivos.push({ file: f, nombre: f.name, tipo: esCarta ? 'carta' : 'factura' });
   }
   renderFiles();
@@ -173,8 +165,7 @@ function renderFiles() {
   var html = '';
   for (var i = 0; i < archivos.length; i++) {
     var a = archivos[i];
-    var isImg = /\.(jpg|jpeg|png|webp)$/i.test(a.nombre);
-    var icon = a.tipo === 'carta' ? (isImg ? '&#x1F4F7;' : '&#x1F5FA;') : '&#x1F9FE;';
+    var icon = a.tipo === 'carta' ? '&#x1F5FA;' : '&#x1F9FE;';
     html += '<div class="fchip">'
       + '<span>' + icon + '</span>'
       + '<span class="fn" title="' + a.nombre + '">' + a.nombre + '</span>'
@@ -215,107 +206,28 @@ function emparejar() {
   return pares;
 }
 
-function extraerTodosNumeros(texto) {
-  // Extracts all 4-5 digit numbers from any string
-  // "PEM-DAP-VZ-5709-2026-002" -> ["5709"] (excludes year 2026 and short nums)
-  // "VUU5467" -> ["5467"]
-  // "PEM-DAP-VZ-5175-2026-003" -> ["5175"]
-  if (!texto) return [];
-  var nums = [];
-  var m;
-  var re = /(\d{4,5})/g;
-  while ((m = re.exec(texto)) !== null) {
-    var n = m[1];
-    // Exclude obvious years and sequential numbers
-    if (n >= '2020' && n <= '2030') continue;
-    nums.push(n);
-  }
-  return nums;
-}
-
-function extraerNumeroCEDA(folio) {
-  var nums = extraerTodosNumeros(folio);
-  return nums.length > 0 ? nums[0] : null;
-}
-
-
-function buscarTarifa(claveCeda, destino, origen, folioViaje) {
-  var dn  = (destino    || '').toUpperCase().trim();
-  var ccn = (claveCeda  || '').toUpperCase().trim();
-  var on  = (origen     || '').toUpperCase().trim();
-  var fv  = (folioViaje || '').toUpperCase().trim();
-
-  function mejorPorOrigen(lista) {
-    if (!on || lista.length === 1) return lista[0];
-    var keywords = ['COATZ', 'LAZARO', 'CARDENAS', 'FERCO', 'TOLUCA', 'SALINA', 'MERIDA', 'QUERETARO'];
-    for (var ki = 0; ki < keywords.length; ki++) {
-      if (on.indexOf(keywords[ki]) >= 0) {
-        var found = lista.find(function(t){ return t.o.toUpperCase().indexOf(keywords[ki]) >= 0; });
-        if (found) return found;
-      }
+function buscarTarifa(claveCeda, destino, origen) {
+  var dn = (destino || '').toUpperCase().trim();
+  var ccn = (claveCeda || '').toUpperCase().trim();
+  var on = (origen || '').toUpperCase().trim();
+  if (ccn && ccn !== 'NAN') {
+    var m = TARIFAS.filter(function(t){ return t.cc.toUpperCase() === ccn; });
+    if (m.length === 1) return m[0];
+    if (m.length > 1) {
+      var mo = m.find(function(t){ return on && t.o.toUpperCase().indexOf(on.split(' ')[0]) >= 0; });
+      return mo || m[0];
     }
-    return lista[0];
   }
-
-  function buscarPorNumero(num) {
-    if (!num) return null;
-    var res = TARIFAS.filter(function(t){
-      return t.cc.replace(/[^0-9]/g,'') === num;
+  if (dn) {
+    var m2 = TARIFAS.filter(function(t){
+      var td = t.d.toUpperCase();
+      return td === dn || td.indexOf(dn) >= 0 || dn.indexOf(td.split('-')[0].trim()) >= 0;
     });
-    return res.length >= 1 ? mejorPorOrigen(res) : null;
-  }
-
-  // ESTRATEGIA 1: Todos los numeros de 4-5 digitos en el folio del viaje
-  var numsFolio = extraerTodosNumeros(fv);
-  for (var i = 0; i < numsFolio.length; i++) {
-    var r1 = buscarPorNumero(numsFolio[i]);
-    if (r1) return r1;
-  }
-
-  // ESTRATEGIA 2: Todos los numeros en la clave CEDA que dio Claude
-  var numsCeda = extraerTodosNumeros(ccn);
-  for (var j = 0; j < numsCeda.length; j++) {
-    var r2 = buscarPorNumero(numsCeda[j]);
-    if (r2) return r2;
-  }
-
-  // ESTRATEGIA 3: Clave CEDA exacta
-  if (ccn && ccn !== 'NAN' && ccn !== 'NULL') {
-    var r3 = TARIFAS.filter(function(t){ return t.cc.toUpperCase() === ccn; });
-    if (r3.length >= 1) return mejorPorOrigen(r3);
-  }
-
-  // ESTRATEGIA 4: Palabras del destino (busqueda por cada palabra significativa)
-  if (dn) {
-    var palabras = dn.split(/[\s\-,]+/).filter(function(p){ return p.length >= 4; });
-    for (var k = 0; k < palabras.length; k++) {
-      var pal = palabras[k];
-      // Skip common/generic words
-      if (['CEDA','PARA','ZONA','TIPO','SERV','MUNI'].indexOf(pal) >= 0) continue;
-      var r4 = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(pal) >= 0; });
-      if (r4.length >= 1) return mejorPorOrigen(r4);
+    if (m2.length >= 1) {
+      var mo2 = m2.find(function(t){ return on && t.o.toUpperCase().indexOf(on.split(' ')[0]) >= 0; });
+      return mo2 || m2[0];
     }
   }
-
-  // ESTRATEGIA 5: Palabras del folio buscarlas en el destino del tarifario
-  if (fv) {
-    var partesFolio = fv.split(/[\-_]+/).filter(function(p){ return p.length >= 4 && !/^\d+$/.test(p); });
-    for (var m2 = 0; m2 < partesFolio.length; m2++) {
-      var parte = partesFolio[m2];
-      var r5 = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(parte) >= 0; });
-      if (r5.length >= 1) return mejorPorOrigen(r5);
-    }
-  }
-
-  // ESTRATEGIA 6: Coincidencia parcial de destino (primera palabra larga)
-  if (dn) {
-    var primPal = dn.split(/[\s\-]+/).find(function(p){ return p.length >= 5; });
-    if (primPal) {
-      var r6 = TARIFAS.filter(function(t){ return t.d.toUpperCase().indexOf(primPal) >= 0; });
-      if (r6.length >= 1) return mejorPorOrigen(r6);
-    }
-  }
-
   return null;
 }
 
@@ -339,16 +251,15 @@ function buildPrompt(tieneCarta) {
   return 'Eres validador experto de CFDIs mexicanos de transporte para Sol Firma de Negocios SA de CV.\n\n'
     + 'REGLAS DE VALIDACION:\n'
     + '- RFC receptor: SFN990310U62\n'
-    + '- Razon Social receptor: debe contener SOL FIRMA DE NEGOCIOS. Si el valor es exactamente "SOL FIRMA DE NEGOCIOS" o "SOL FIRMA DE NEGOCIOS SA DE CV" marca ok:true en ambos casos.\n'
+    + '- Razon Social receptor: SOL FIRMA DE NEGOCIOS SA DE CV\n'
     + '- Regimen Fiscal receptor: 601\n'
     + '- Uso CFDI: G03\n'
     + '- Tipo comprobante: I - Ingreso con Complemento Carta Porte\n'
     + '- Clave producto: 78101802\n'
     + '- Clave unidad: E48\n'
-    + '- IVA trasladado: 16% (SIEMPRE obligatorio)\n'
-    + '- IVA retenido 4%: SIEMPRE obligatorio en TODAS las facturas, sin excepcion, independientemente del regimen fiscal del emisor\n'
-    + '- ISR retenido 1.25%: SOLO si el emisor tributa en RESICO (regimen 626). No aplica en regimen 612 ni otros\n'
-    + '- IMPORTANTE: El IVA retenido 4% y el ISR retenido son conceptos DISTINTOS e INDEPENDIENTES. El IVA 4% siempre va. El ISR 1.25% solo en RESICO\n'
+    + '- IVA trasladado: 16%\n'
+    + '- IVA retenido: 4% (OBLIGATORIO)\n'
+    + '- Si emisor es RESICO (regimen 626): tambien retener ISR 1.25%\n'
     + '- Metodo pago: PPD\n'
     + '- Forma pago: 99\n'
     + '- Complemento Carta Porte version 3.1\n'
@@ -358,16 +269,12 @@ function buildPrompt(tieneCarta) {
     + '- Descripcion debe incluir folio del viaje (ej: PEM-URE-VZ-5689-2026-021)\n'
     + '- Descripcion debe incluir destino (ej: PTM-5689-TLACHICHUCA)\n\n'
     + 'PRECIO: El subtotal correcto = TARIFA UNITARIA x TONELADAS ENVIADAS.\n'
-    + 'La clave CEDA viene en el DESTINO de la descripcion: ej DESTINO: PTM-5689-TLACHICHUCA -> clave PTM-5689.\n'
-    + 'El origen se deduce de la planta de salida en Carta Porte (Coatzacoalcos, Lazaro Cardenas, Ferco Veracruz, Toluca, Salina Cruz, Merida).\n\n'
-    + 'BULTOS: Compara bultos enviados vs bultos recibidos en Carta Porte o remision.\n'
-    + 'Si hay faltantes reporta cantidad y razon. Si todos se recibieron pon "bultos": null.\n\n'
+    + 'Extrae la clave CEDA del folio en la descripcion (ej: PTM-5689).\n\n'
+    + 'BULTOS: Si hay bultos faltantes (enviados != recibidos), reporta cuantos faltan y la razon.\n'
+    + 'Si todos los bultos fueron recibidos, pon "bultos": null.\n\n'
     + 'CAMPOS CRITICOS para aprobar: folio coincide, toneladas coinciden, destino coincide.\n'
     + 'INFORMATIVOS (no bloquean): operador, placas.\n\n'
-    + 'INSTRUCCION CRITICA: Responde SOLO con JSON puro. Empieza con { termina con }. '
-    + 'En los valores de string NO uses comillas dobles, apostrofes, ni saltos de linea. '
-    + 'Si necesitas incluir comillas en un valor, omitelas o usa parentesis en su lugar. '
-    + 'Todos los valores de string deben ser texto simple en una sola linea.\n'
+    + 'Responde SOLO con JSON valido sin markdown ni backticks:\n'
     + '{\n'
     + '  "veredicto": "aprobada" | "rechazada" | "con_observaciones",\n'
     + '  "resumen": "...",\n'
@@ -383,7 +290,7 @@ function buildPrompt(tieneCarta) {
     + '  "comparacion": ' + compSchema + ',\n'
     + '  "validacion_campos": [\n'
     + '    {"campo":"RFC receptor","ok":true,"valor":"...","esperado":"SFN990310U62","detalle":""},\n'
-    + '    {"campo":"Razon social receptor","ok":true,"valor":"...","esperado":"SOL FIRMA DE NEGOCIOS","detalle":""},\n'
+    + '    {"campo":"Razon social receptor","ok":true,"valor":"...","esperado":"SOL FIRMA DE NEGOCIOS SA DE CV","detalle":""},\n'
     + '    {"campo":"Uso CFDI","ok":true,"valor":"...","esperado":"G03","detalle":""},\n'
     + '    {"campo":"Metodo de pago","ok":true,"valor":"...","esperado":"PPD","detalle":""},\n'
     + '    {"campo":"Forma de pago","ok":true,"valor":"...","esperado":"99","detalle":""},\n'
@@ -399,24 +306,14 @@ function buildPrompt(tieneCarta) {
     + '    {"campo":"Folio viaje en descripcion","ok":true,"valor":"...","esperado":"Presente","detalle":""}\n'
     + '  ],\n'
     + '  "validacion_precio": {\n'
-    + '    "clave_ceda_detectada":"clave CEDA o numero del folio ej PTM-5689",\n'
-    + '    "numero_ceda":"solo el numero 4 o 5 digitos extraido del folio ej 5175",\n'
-    + '    "origen_detectado":"planta de origen segun Carta Porte",\n'
-    + '    "destino_detectado":"nombre del destino",\n'
-    + '    "toneladas":0,\n'
-    + '    "subtotal_facturado":"...",\n'
-    + '    "iva_trasladado_facturado":"...",\n'
-    + '    "iva_retenido_facturado":"...",\n'
-    + '    "isr_retenido_facturado":"... o 0 si no aplica",\n'
-    + '    "total_facturado":"...",\n'
-    + '    "tarifa_esperada_unitaria":null,"subtotal_esperado":null,\n'
-    + '    "precio_correcto":null,"nota":""\n'
+    + '    "clave_ceda_detectada":"...","origen_detectado":"...","toneladas":0,\n'
+    + '    "subtotal_facturado":"...","tarifa_esperada_unitaria":null,\n'
+    + '    "subtotal_esperado":null,"precio_correcto":null,"nota":""\n'
     + '  },\n'
     + '  "bultos": null,\n'
     + '  "errores_criticos": [],\n'
     + '  "observaciones": []\n'
-    + '}\n'
-    + 'IMPORTANTE campo bultos: si hay faltantes usa {"enviados":N,"recibidos":N,"faltantes":N,"razon":"texto o null"}. Si no hay faltantes pon null exactamente.';
+    + '}';
 }
 
 async function validar(factura, carta) {
@@ -425,33 +322,12 @@ async function validar(factura, carta) {
 
   var content = [];
   var fb = await toBase64(factura.file);
-  if (isImage(factura.file)) {
-    var fMime = factura.file.type || 'image/jpeg';
-    if (fMime === 'application/octet-stream' || fMime === '') {
-      if (/\.png$/i.test(factura.nombre)) fMime = 'image/png';
-      else if (/\.webp$/i.test(factura.nombre)) fMime = 'image/webp';
-      else fMime = 'image/jpeg';
-    }
-    content.push({ type: 'image', source: { type: 'base64', media_type: fMime, data: fb } });
-  } else {
-    content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fb } });
-  }
+  content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: fb } });
   content.push({ type: 'text', text: '[DOC 1 - FACTURA: ' + factura.nombre + ']' });
 
   if (carta) {
     var cb = await toBase64(carta.file);
-    if (isImage(carta.file)) {
-      // Send as image for JPG/PNG/WEBP
-      var imgMime = carta.file.type || 'image/jpeg';
-      if (imgMime === 'application/octet-stream' || imgMime === '') {
-        if (/\.png$/i.test(carta.nombre)) imgMime = 'image/png';
-        else if (/\.webp$/i.test(carta.nombre)) imgMime = 'image/webp';
-        else imgMime = 'image/jpeg';
-      }
-      content.push({ type: 'image', source: { type: 'base64', media_type: imgMime, data: cb } });
-    } else {
-      content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: cb } });
-    }
+    content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: cb } });
     content.push({ type: 'text', text: '[DOC 2 - CARTA PORTE: ' + carta.nombre + ']' });
   }
 
@@ -475,90 +351,15 @@ async function validar(factura, carta) {
 
   var data = await resp.json();
   var txt = data.content.map(function(i){ return i.text || ''; }).join('');
-  // Extract JSON robustly
-  var firstBrace = txt.indexOf('{');
-  var lastBrace = txt.lastIndexOf('}');
-  var clean = (firstBrace >= 0 && lastBrace > firstBrace)
-    ? txt.slice(firstBrace, lastBrace + 1)
-    : txt;
+  var clean = txt.replace(/\x60\x60\x60json|\x60\x60\x60/g, '').trim();
   var result;
-  try {
-    result = JSON.parse(clean);
-  } catch(e1) {
-    // Claude sometimes returns unescaped characters inside string values.
-    // Strategy: parse line by line, truncating at the first broken line.
-    // Better strategy: use a forgiving JSON approach.
-    try {
-      // Remove control characters and fix common issues
-      var fixed = clean
-        .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, '')   // remove bad control chars (keep \n \r \t)
-        .replace(/\n/g, ' ')                                    // flatten newlines inside values
-        .replace(/\r/g, '')
-        .replace(/([^\\])\\([^"\\/bfnrtu])/g, '$1\\\\$2'); // fix bad escape sequences
-      result = JSON.parse(fixed);
-    } catch(e2) {
-      // Last resort: build a minimal result from what we can read from the text
-      var verdRaw = txt.match(/"veredicto"\s*:\s*"([^"]+)"/);
-      var resuRaw = txt.match(/"resumen"\s*:\s*"([^"]+)"/);
-      var verd = verdRaw ? verdRaw[1] : 'con_observaciones';
-      var resu = resuRaw ? resuRaw[1] : 'Analisis recibido pero con formato invalido';
-      // Extract validacion_campos items individually
-      var camposResult = [];
-      var campoRgx = /"campo"\s*:\s*"([^"]+)"[^}]*"ok"\s*:\s*(true|false)[^}]*"valor"\s*:\s*"([^"]*)"[^}]*"esperado"\s*:\s*"([^"]*)"[^}]*"detalle"\s*:\s*"([^"]*)"/g;
-      var cm;
-      while ((cm = campoRgx.exec(txt)) !== null) {
-        camposResult.push({ campo: cm[1], ok: cm[2] === 'true', valor: cm[3], esperado: cm[4], detalle: cm[5] });
-      }
-      // Extract errores_criticos
-      var errsResult = [];
-      var errRgx = /"errores_criticos"\s*:\s*\[([^\]]*?)\]/;
-      var errMatch = txt.match(errRgx);
-      if (errMatch) {
-        var errItems = errMatch[1].match(/"([^"]+)"/g);
-        if (errItems) errsResult = errItems.map(function(s){ return s.replace(/"/g,''); });
-      }
-      // Extract observaciones
-      var obsResult = [];
-      var obsRgx = /"observaciones"\s*:\s*\[([^\]]*?)\]/;
-      var obsMatch = txt.match(obsRgx);
-      if (obsMatch) {
-        var obsItems = obsMatch[1].match(/"([^"]+)"/g);
-        if (obsItems) obsResult = obsItems.map(function(s){ return s.replace(/"/g,''); });
-      }
-      result = {
-        veredicto: verd,
-        resumen: resu,
-        validacion_campos: camposResult,
-        errores_criticos: errsResult,
-        observaciones: obsResult,
-        bultos: null,
-        datos_factura: null,
-        comparacion: null,
-        validacion_precio: null
-      };
-    }
-  }
+  try { result = JSON.parse(clean); }
+  catch(e) { result = { veredicto: 'con_observaciones', resumen: 'Analisis completado. ' + txt.slice(0,150), validacion_campos: [], errores_criticos: [], observaciones: [], bultos: null }; }
 
-  // Post-proceso: tarifa x toneladas + desglose fiscal
+  // Post-proceso: tarifa x toneladas
   if (result.validacion_precio) {
     var vp = result.validacion_precio;
-    var df = result.datos_factura || {};
-    var folioViaje = df.folio_viaje || vp.clave_ceda_detectada || '';
-    var cedaKey = vp.numero_ceda || vp.clave_ceda_detectada || '';
-    var match = buscarTarifa(cedaKey, vp.destino_detectado || df.destino_nombre, vp.origen_detectado, folioViaje);
-
-    // ALWAYS populate fiscal real values from invoice data regardless of match
-    var ivaTrasladadoReal = parseFloat((vp.iva_trasladado_facturado || df.iva_trasladado || '').replace(/[$,\s]/g,''));
-    var ivaRetenidoReal   = parseFloat((vp.iva_retenido_facturado   || df.iva_retenido  || '').replace(/[$,\s]/g,''));
-    var isrRetenidoReal   = parseFloat((vp.isr_retenido_facturado   || df.isr_retenido  || '0').replace(/[$,\s]/g,'')) || 0;
-    var totalReal         = parseFloat((vp.total_facturado          || df.total          || '').replace(/[$,\s]/g,''));
-    var subtotalReal      = parseFloat((vp.subtotal_facturado       || df.subtotal       || '').replace(/[$,\s]/g,''));
-    vp.iva_trasladado_real = isNaN(ivaTrasladadoReal) ? (df.iva_trasladado || '&#x2014;') : '$' + ivaTrasladadoReal.toFixed(2);
-    vp.iva_retenido_real   = isNaN(ivaRetenidoReal)   ? (df.iva_retenido  || '&#x2014;') : '$' + ivaRetenidoReal.toFixed(2);
-    vp.isr_retenido_real   = isrRetenidoReal > 0      ? '$' + isrRetenidoReal.toFixed(2) : 'No aplica';
-    vp.total_real          = isNaN(totalReal)          ? (df.total         || '&#x2014;') : '$' + totalReal.toFixed(2);
-    vp.subtotal_real_num   = isNaN(subtotalReal)       ? 0 : subtotalReal;
-
+    var match = buscarTarifa(vp.clave_ceda_detectada, result.datos_factura ? result.datos_factura.destino_nombre : null, vp.origen_detectado);
     if (match) {
       var tarifaUnit = parseFloat(match.t);
       var tons = parseFloat(vp.toneladas) || parseFloat(result.datos_factura ? result.datos_factura.toneladas_facturadas : 0) || 0;
@@ -568,19 +369,6 @@ async function validar(factura, carta) {
 
       vp.tarifa_esperada_unitaria = '$' + match.t + '/ton (' + match.o + ' -> ' + match.d + ')';
       vp.subtotal_esperado = '$' + subtotalEsperado.toFixed(2) + ' (' + match.t + ' x ' + tons + ' ton)';
-
-      // Calcular desglose fiscal esperado
-      var esResico = df.emisor_regimen && (df.emisor_regimen.indexOf('626') >= 0 || df.emisor_regimen.toUpperCase().indexOf('RESICO') >= 0);
-      vp.iva_trasladado_esperado  = '$' + (subtotalEsperado * 0.16).toFixed(2) + ' (16%)';
-      vp.iva_retenido_esperado    = '$' + (subtotalEsperado * 0.04).toFixed(2) + ' (4%)';
-      vp.isr_retenido_esperado    = esResico ? '$' + (subtotalEsperado * 0.0125).toFixed(2) + ' (1.25% RESICO)' : 'N/A (no es RESICO)';
-      var totalEsp = subtotalEsperado + (subtotalEsperado * 0.16) - (subtotalEsperado * 0.04) - (esResico ? subtotalEsperado * 0.0125 : 0);
-      vp.total_esperado = '$' + totalEsp.toFixed(2);
-
-      // Comparar valores fiscales reales vs esperados (ivaTrasladadoReal etc ya definidos arriba)
-      vp.iva_trasladado_correcto = isNaN(ivaTrasladadoReal) ? null : Math.abs(ivaTrasladadoReal - subtotalEsperado * 0.16) <= subtotalEsperado * 0.01;
-      vp.iva_retenido_correcto   = isNaN(ivaRetenidoReal)   ? null : Math.abs(ivaRetenidoReal   - subtotalEsperado * 0.04) <= subtotalEsperado * 0.01;
-      vp.total_correcto          = isNaN(totalReal)          ? null : Math.abs(totalReal - totalEsp) <= totalEsp * 0.01;
 
       if (!isNaN(subtotalFacturado) && subtotalEsperado > 0) {
         var diff = Math.abs(subtotalFacturado - subtotalEsperado);
@@ -650,59 +438,20 @@ function renderCard(id, estado, data, fnombre, cnombre) {
       + '</div></div>';
   }
 
-  // Fiscal section: built from datos_factura (always available) + validacion_precio (bonus)
   var precio = '';
-  var df2 = data.datos_factura || {};
-  var vp2 = data.validacion_precio || {};
-
-  function cell(label, esperado, real, ok) {
-    var cls = ok === true ? 'cmatch' : ok === false ? 'cmis' : '';
-    return '<div class="cbox ' + cls + '">'
-      + '<div class="cbl">' + label + '</div>'
-      + '<div class="cbv">' + (real || '&#x2014;') + '</div>'
-      + (esperado ? '<div class="cd">Esperado: ' + esperado + '</div>' : '')
+  if (data.validacion_precio) {
+    var vp = data.validacion_precio;
+    var pc = vp.precio_correcto === true ? 'cmatch' : vp.precio_correcto === false ? 'cmis' : '';
+    precio = '<div class="csec"><div class="cst">&#x1F4B0; Validacion de precio (tarifa x toneladas)</div>'
+      + '<div class="cgrid">'
+      + '<div class="cbox"><div class="cbl">Tarifa unitaria en tarifario</div><div class="cbv">' + (vp.tarifa_esperada_unitaria || '&#x2014;') + '</div></div>'
+      + '<div class="cbox"><div class="cbl">Subtotal esperado</div><div class="cbv">' + (vp.subtotal_esperado || '&#x2014;') + '</div></div>'
+      + '<div class="cbox ' + pc + '"><div class="cbl">Subtotal facturado</div><div class="cbv">' + (vp.subtotal_facturado || (data.datos_factura ? data.datos_factura.subtotal : '') || '&#x2014;') + '</div></div>'
+      + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + (vp.toneladas || (data.datos_factura ? data.datos_factura.toneladas_facturadas : '') || '&#x2014;') + ' ton</div></div>'
+      + '</div>'
+      + (vp.nota ? '<div style="font-size:12px;color:var(--muted);margin-top:7px">' + vp.nota + '</div>' : '')
       + '</div>';
   }
-
-  // Read real values: prefer vp2 fields, fallback to df2
-  var subtotalFact = vp2.subtotal_facturado || df2.subtotal || '';
-  var ivaTraslFact = vp2.iva_trasladado_facturado || df2.iva_trasladado || '';
-  var ivaRetFact   = vp2.iva_retenido_facturado   || df2.iva_retenido   || '';
-  var isrRetFact   = vp2.isr_retenido_facturado    || df2.isr_retenido   || '';
-  var totalFact    = vp2.total_facturado            || df2.total          || '';
-  var tonsDisp     = vp2.toneladas || df2.toneladas_facturadas || '?';
-  var origenDisp   = vp2.origen_detectado  || df2.origen_detectado  || '?';
-  var destinoDisp  = vp2.destino_detectado || df2.destino_nombre    || '?';
-
-  // Use pre-computed values from post-process if available
-  var subtotalReal = vp2.iva_trasladado_real ? (vp2.subtotal_real_num > 0 ? '$' + Number(vp2.subtotal_real_num).toFixed(2) : subtotalFact) : subtotalFact;
-  var ivaTraslReal = vp2.iva_trasladado_real || ivaTraslFact;
-  var ivaRetReal   = vp2.iva_retenido_real   || ivaRetFact;
-  var isrRetReal   = vp2.isr_retenido_real   || (isrRetFact && isrRetFact !== '0' ? isrRetFact : 'No aplica');
-  var totalReal    = vp2.total_real          || totalFact;
-
-  var tarifaInfo = vp2.tarifa_esperada_unitaria
-    ? ' &nbsp;|&nbsp; Tarifa en tarifario: <b style="color:var(--text)">' + vp2.tarifa_esperada_unitaria + '</b>'
-    : ' &nbsp;|&nbsp; <span style="color:var(--warn)">Tarifa no encontrada en tarifario</span>';
-
-  precio = '<div class="csec">'
-    + '<div class="cst">&#x1F4B0; Validacion de precio y desglose fiscal</div>'
-    + '<div style="font-size:11px;color:var(--muted);margin-bottom:8px">'
-    + 'Ruta: <b style="color:var(--text)">' + origenDisp + '</b>'
-    + ' &#x2192; <b style="color:var(--text)">' + destinoDisp + '</b>'
-    + ' &nbsp;|&nbsp; ' + tonsDisp + ' ton'
-    + tarifaInfo
-    + '</div>'
-    + '<div class="cgrid">'
-    + cell('Subtotal', vp2.subtotal_esperado, subtotalReal, vp2.precio_correcto)
-    + cell('IVA trasladado 16%', vp2.iva_trasladado_esperado, ivaTraslReal, vp2.iva_trasladado_correcto)
-    + cell('IVA retenido 4%',   vp2.iva_retenido_esperado,   ivaRetReal,   vp2.iva_retenido_correcto)
-    + cell('ISR retenido (RESICO 1.25%)', vp2.isr_retenido_esperado, isrRetReal, null)
-    + cell('TOTAL', vp2.total_esperado, totalReal, vp2.total_correcto)
-    + '<div class="cbox"><div class="cbl">Toneladas</div><div class="cbv">' + tonsDisp + ' ton</div></div>'
-    + '</div>'
-    + (vp2.nota ? '<div style="font-size:12px;color:var(--muted);margin-top:7px">' + vp2.nota + '</div>' : '')
-    + '</div>';
 
   var bultos = '';
   if (data.bultos && data.bultos.faltantes > 0) {
