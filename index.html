@@ -667,16 +667,42 @@ async function validar(factura, carta) {
       vp.iva_retenido_correcto   = isNaN(ivaRetenidoReal)   ? null : Math.abs(ivaRetenidoReal   - subtotalEsperado * 0.04) <= subtotalEsperado * 0.01;
       vp.total_correcto          = isNaN(totalReal)          ? null : Math.abs(totalReal - totalEsp) <= totalEsp * 0.01;
 
-      if (!isNaN(subtotalFacturado) && subtotalEsperado > 0) {
-        var diff = Math.abs(subtotalFacturado - subtotalEsperado);
-        vp.precio_correcto = diff <= subtotalEsperado * 0.01;
-        if (!vp.precio_correcto) {
-          vp.nota = 'Diferencia de $' + (subtotalFacturado - subtotalEsperado).toFixed(2) + '. Facturado: $' + subtotalFacturado + ', Esperado: $' + subtotalEsperado.toFixed(2);
-          if (!result.errores_criticos) result.errores_criticos = [];
-          result.errores_criticos.push('Precio incorrecto: se facturo $' + subtotalFacturado + ' pero deberia ser $' + subtotalEsperado.toFixed(2) + ' (tarifa $' + match.t + ' x ' + tons + ' ton)');
-          if (result.veredicto === 'aprobada') result.veredicto = 'rechazada';
+      if (!isNaN(subtotalFacturado) && subtotalFacturado > 0) {
+        // Check if subtotal matches ANY origin in todas_tarifas (not just the detected one)
+        var matchingTarifa = null;
+        for (var ti = 0; ti < todasTarifas.length; ti++) {
+          var candidateSub = parseFloat(todasTarifas[ti].t) * tons;
+          if (Math.abs(subtotalFacturado - candidateSub) <= candidateSub * 0.01) {
+            matchingTarifa = todasTarifas[ti];
+            break;
+          }
+        }
+
+        if (matchingTarifa) {
+          // Found a matching origin — price is correct
+          vp.precio_correcto = true;
+          vp.nota = 'Precio correcto: $' + matchingTarifa.t + '/ton x ' + tons + ' ton = $' + (parseFloat(matchingTarifa.t)*tons).toFixed(2) + ' (' + matchingTarifa.o + ')';
+          // Update the displayed tarifa to the one that actually matches
+          vp.tarifa_esperada_unitaria = '$' + matchingTarifa.t + '/ton (' + matchingTarifa.o + ' -> ' + matchingTarifa.d + ')';
+          var subMatchEsp = parseFloat(matchingTarifa.t) * tons;
+          vp.subtotal_esperado = '$' + subMatchEsp.toFixed(2) + ' (' + matchingTarifa.t + ' x ' + tons + ' ton)';
+          var esResicoM = df.emisor_regimen && (df.emisor_regimen.indexOf('626') >= 0 || df.emisor_regimen.toUpperCase().indexOf('RESICO') >= 0);
+          vp.iva_trasladado_esperado = '$' + (subMatchEsp * 0.16).toFixed(2) + ' (16%)';
+          vp.iva_retenido_esperado   = '$' + (subMatchEsp * 0.04).toFixed(2) + ' (4%)';
+          vp.isr_retenido_esperado   = esResicoM ? '$' + (subMatchEsp * 0.0125).toFixed(2) + ' (1.25% RESICO)' : 'N/A (no es RESICO)';
+          var totalEspM = subMatchEsp + subMatchEsp*0.16 - subMatchEsp*0.04 - (esResicoM ? subMatchEsp*0.0125 : 0);
+          vp.total_esperado = '$' + totalEspM.toFixed(2);
+          vp.iva_trasladado_correcto = isNaN(ivaTrasladadoReal) ? null : Math.abs(ivaTrasladadoReal - subMatchEsp*0.16) <= subMatchEsp*0.01;
+          vp.iva_retenido_correcto   = isNaN(ivaRetenidoReal)   ? null : Math.abs(ivaRetenidoReal   - subMatchEsp*0.04) <= subMatchEsp*0.01;
+          vp.total_correcto          = isNaN(totalReal)         ? null : Math.abs(totalReal - totalEspM) <= totalEspM*0.01;
+        } else if (subtotalEsperado > 0) {
+          // No origin matches — show difference vs detected origin
+          var diff = Math.abs(subtotalFacturado - subtotalEsperado);
+          vp.precio_correcto = false;
+          vp.nota = 'Precio no coincide con ninguno de los ' + todasTarifas.length + ' origenes disponibles. Diferencia vs ' + match.o + ': $' + (subtotalFacturado - subtotalEsperado).toFixed(2);
         } else {
-          vp.nota = 'Precio correcto: $' + match.t + '/ton x ' + tons + ' ton = $' + subtotalEsperado.toFixed(2);
+          vp.precio_correcto = null;
+          vp.nota = 'No se pudo verificar el precio';
         }
       } else {
         vp.nota = 'No se pudo calcular el precio esperado';
