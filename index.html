@@ -390,20 +390,32 @@ function buscarTarifa(claveDestino, destinoNombre, origenTexto, folioViaje) {
     claveCEDA = claveDestino.trim().toUpperCase();
   }
 
+  var nombreOrigenDet = detectarOrigen(origenTexto);
+
   if (claveCEDA) {
     candidatos = TARIFAS.filter(function(t){ return t.cc === claveCEDA; });
-    if (candidatos.length >= 1) return filtrarPorOrigen(candidatos, origenTexto);
+    if (candidatos.length >= 1) {
+      // Solo regresar si el origen detectado coincide, o si no hay origen detectado
+      if (!nombreOrigenDet) return filtrarPorOrigen(candidatos, origenTexto);
+      var conOrigen = candidatos.filter(function(t){ return t.o === nombreOrigenDet; });
+      if (conOrigen.length >= 1) return conOrigen[0];
+      // Origen no esta en esta clave CEDA - continuar buscando
+    }
   }
 
   // ── PASO 2: Buscar por numero del folio en clave_ceda del tarifario ─────────
   var numFolio = extraerNumeroFolio(folioViaje) || extraerNumeroFolio(claveDestino);
   if (numFolio) {
     candidatos = TARIFAS.filter(function(t){
-      // El numero del tarifario es la parte numerica de la clave, ej "HCL-4935" -> "4935"
       var numEnCC = t.cc.replace(/^[A-Z]+-/,'');
       return numEnCC === numFolio;
     });
-    if (candidatos.length >= 1) return filtrarPorOrigen(candidatos, origenTexto);
+    if (candidatos.length >= 1) {
+      if (!nombreOrigenDet) return filtrarPorOrigen(candidatos, origenTexto);
+      var conOrigen2 = candidatos.filter(function(t){ return t.o === nombreOrigenDet; });
+      if (conOrigen2.length >= 1) return conOrigen2[0];
+      // Origen no esta en estos candidatos - continuar buscando
+    }
   }
 
   // ── PASO 3: Buscar por nombre del destino ───────────────────────────────────
@@ -480,7 +492,13 @@ function buildPrompt(tieneCarta) {
     + '  - subtotal_facturado = el importe del concepto sin impuestos\n\n'
     + 'BULTOS: Compara bultos enviados vs bultos recibidos en Carta Porte o remision.\n'
     + 'Si hay faltantes reporta cantidad y razon. Si todos se recibieron pon "bultos": null.\n\n'
-    + 'CAMPOS CRITICOS para aprobar: folio coincide, toneladas coinciden, destino coincide.\n'
+    + 'CAMPOS CRITICOS - si alguno no coincide marca veredicto como rechazada:\n'
+    + '  1. TONELADAS: las toneladas de la factura DEBEN coincidir con las de la Carta Porte fisica.\n'
+    + '     La Carta Porte fisica puede tener toneladas distintas al complemento XML.\n'
+    + '     Si la Carta Porte fisica dice 23 ton y la factura dice 36 ton, NO COINCIDEN -> error critico.\n'
+    + '     Convierte KG a toneladas: 36000 KG = 36 ton, 23000 KG = 23 ton.\n'
+    + '  2. FOLIO: el folio del viaje debe coincidir entre factura y Carta Porte.\n'
+    + '  3. DESTINO: el destino debe coincidir entre ambos documentos.\n'
     + 'INFORMATIVOS (no bloquean): operador, placas.\n\n'
     + 'INSTRUCCION CRITICA: Responde SOLO con JSON puro. Empieza con { termina con }. '
     + 'En los valores de string NO uses comillas dobles, apostrofes, ni saltos de linea. '
@@ -694,6 +712,21 @@ async function validar(factura, carta) {
     }
     vp.todas_tarifas = todasTarifas;
 
+    // ── VERIFICACION DE TONELADAS (forzada desde JS, no dependemos solo de Claude) ──
+    var comp = result.comparacion || {};
+    if (comp.toneladas_coinciden === false) {
+      // Toneladas mismatch is a hard error - force it
+      if (!result.errores_criticos) result.errores_criticos = [];
+      var tFact = comp.toneladas_factura || '?';
+      var tCarta = comp.toneladas_carta || '?';
+      var msgTon = 'DISCREPANCIA DE TONELADAS: La factura indica ' + tFact + ' ton pero la Carta Porte indica ' + tCarta + ' ton. No coinciden.';
+      // Only add if not already there
+      var yaExiste = result.errores_criticos.some(function(e){ return e.indexOf('TONELADAS') >= 0 || e.indexOf('tonelada') >= 0; });
+      if (!yaExiste) result.errores_criticos.push(msgTon);
+      // Force veredicto to at least con_observaciones
+      if (result.veredicto === 'aprobada') result.veredicto = 'rechazada';
+    }
+
     // ALWAYS populate fiscal real values from invoice data regardless of match
     var ivaTrasladadoReal = parseFloat((vp.iva_trasladado_facturado || df.iva_trasladado || '').replace(/[$,\s]/g,''));
     var ivaRetenidoReal   = parseFloat((vp.iva_retenido_facturado   || df.iva_retenido  || '').replace(/[$,\s]/g,''));
@@ -708,7 +741,11 @@ async function validar(factura, carta) {
 
     if (match) {
       var tarifaUnit = parseFloat(match.t);
-      var tons = parseFloat(vp.toneladas) || parseFloat(result.datos_factura ? result.datos_factura.toneladas_facturadas : 0) || 0;
+      // Si hay carta porte, usar SUS toneladas (son el tonelaje real entregado).
+      // Si no hay carta porte, usar las toneladas de la factura.
+      var tonsCarta = result.comparacion ? parseFloat(result.comparacion.toneladas_carta) : NaN;
+      var tonsFact  = parseFloat(vp.toneladas) || parseFloat(result.datos_factura ? result.datos_factura.toneladas_facturadas : 0) || 0;
+      var tons = (!isNaN(tonsCarta) && tonsCarta > 0) ? tonsCarta : tonsFact;
       var subtotalEsperado = tarifaUnit * tons;
       var subtotalStr = vp.subtotal_facturado || (result.datos_factura ? result.datos_factura.subtotal : '') || '';
       var subtotalFacturado = parseFloat(subtotalStr.replace(/[$,\s]/g, ''));
